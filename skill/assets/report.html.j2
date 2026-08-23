@@ -1,0 +1,390 @@
+{% macro metric(label, value, tone='') -%}
+<div class="metric{% if tone %} {{ tone }}{% endif %}">
+  <span class="metric-value">{{ value }}</span>
+  <span class="metric-label">{{ label }}</span>
+</div>
+{%- endmacro %}
+
+{% macro messages(title, items, tone) -%}
+{% if items %}
+<section class="notice {{ tone }}">
+  <h3>{{ title }}</h3>
+  <ul>
+    {% for item in items %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+{%- endmacro %}
+
+{% macro locations(items) -%}
+{% if items %}
+  {% for location in items %}<code>{{ location.path }}:{{ location.line }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+{% else %}
+  <span class="muted">No project location recorded</span>
+{% endif %}
+{%- endmacro %}
+
+{% macro report_entry(entry, surface, index) -%}
+<details class="entry" data-status="{{ entry.status }}" id="{{ surface|slug }}-{{ entry.name|slug }}-{{ index }}">
+  <summary>
+    <span class="entry-name">{{ entry.name }}</span>
+    <span class="versions">{{ entry.current }} → {{ entry.latest }}</span>
+    <span class="status {{ entry.status }}">{{ entry.status }}</span>
+    <span class="group">{{ entry.group }}</span>
+  </summary>
+  <div class="entry-body">
+    <div>
+      <h4>Changes</h4>
+      <ul>
+        {% for change in entry.changes %}
+        <li>{{ change }}</li>
+        {% else %}
+        <li class="muted">No release-note summary recorded</li>
+        {% endfor %}
+      </ul>
+      {% if entry.changelog_url %}
+      <a class="release-link" href="{{ entry.changelog_url }}" target="_blank" rel="noopener noreferrer">Release notes</a>
+      {% endif %}
+    </div>
+    <div>
+      <h4>Project assessment</h4>
+      <p><strong>Risk</strong> {{ entry.risk }}</p>
+      <p><strong>Recommendation</strong> {{ entry.recommendation }}</p>
+      <p><strong>Evidence</strong> {{ locations(entry.locations) }}</p>
+      {% if entry.current_ref is defined or entry.latest_ref is defined %}
+      <p class="refs"><strong>Refs</strong> {{ entry.current_ref|default('❓ unknown') }} to {{ entry.latest_ref|default('❓ unknown') }}</p>
+      {% endif %}
+    </div>
+  </div>
+</details>
+{%- endmacro %}
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dependency upgrade report for {{ project_name }}</title>
+  <script>
+const reportTheme = (() => {
+  const key = 'deps-report-theme';
+  const media = matchMedia('(prefers-color-scheme: dark)');
+  const root = document.documentElement;
+
+  function read() {
+    try {
+      const value = localStorage.getItem(key);
+      return value === 'light' || value === 'dark' ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function apply(value) {
+    root.dataset.theme = value;
+  }
+
+  function save(value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      return;
+    }
+  }
+
+  root.classList.add('js');
+  apply(read() || (media.matches ? 'dark' : 'light'));
+  return { apply, media, read, save };
+})();
+  </script>
+  <style>
+:root {
+  color-scheme: light;
+  --ink: #172033;
+  --muted: #647086;
+  --paper: #f4f6fa;
+  --panel: #ffffff;
+  --line: #dce1ea;
+  --tabs: rgb(255 255 255 / 94%);
+  --shadow: rgb(23 32 51 / 8%);
+  --code: #eef1f6;
+  --brand: #2952cc;
+  --brand-soft: #e9efff;
+  --danger: #a32929;
+  --danger-soft: #fff0ef;
+  --danger-line: #efc4c0;
+  --warning: #805500;
+  --warning-soft: #fff6d8;
+  --warning-line: #ead797;
+  --unknown: #5f478f;
+  --unknown-soft: #f3edff;
+  --unknown-line: #d9c9f7;
+  --safe: #176b45;
+  --safe-soft: #e8f7ef;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); }
+button, summary { font: inherit; }
+.shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; }
+header { padding: 48px 0 26px; }
+.header-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.header-top .eyebrow { margin: 0; }
+.eyebrow { margin: 0 0 6px; color: var(--brand); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.4rem); letter-spacing: -0.045em; }
+.subtitle { margin: 12px 0 0; color: var(--muted); }
+.theme-toggle { display: none; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink); cursor: pointer; font-weight: 750; }
+.js .theme-toggle { display: inline-flex; }
+.theme-toggle:hover { border-color: var(--brand); color: var(--brand); }
+.theme-toggle:focus-visible { outline: 3px solid var(--brand-soft); outline-offset: 2px; }
+.tabs { position: sticky; top: 0; z-index: 10; display: flex; gap: 6px; padding: 10px; overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--tabs); box-shadow: 0 12px 32px var(--shadow); backdrop-filter: blur(12px); }
+.tab, .filter { border: 0; border-radius: 9px; background: transparent; color: var(--muted); cursor: pointer; font-weight: 700; white-space: nowrap; }
+.tab { padding: 10px 15px; }
+.tab[aria-selected="true"] { background: var(--ink); color: var(--panel); }
+.tab-panel { padding: 28px 0 60px; }
+.js .tab-panel[hidden] { display: none; }
+.surface-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
+h2 { margin: 0; font-size: 2rem; letter-spacing: -0.035em; }
+.metrics, .hero-metrics { display: flex; flex-wrap: wrap; gap: 10px; }
+.metric { min-width: 96px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.metric.danger { background: var(--danger-soft); border-color: var(--danger-line); }
+.metric.warning { background: var(--warning-soft); border-color: var(--warning-line); }
+.metric.unknown { background: var(--unknown-soft); border-color: var(--unknown-line); }
+.metric.unknown .metric-label { color: var(--unknown); }
+.metric-value, .metric-label { display: block; }
+.metric-value { font-size: 1.45rem; font-weight: 850; }
+.metric-label { margin-top: 2px; color: var(--muted); font-size: 0.76rem; font-weight: 700; text-transform: uppercase; }
+.hero-metrics { margin-bottom: 20px; }
+.hero-metrics .metric { flex: 1 1 150px; }
+.surface-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.surface-card { display: flex; min-height: 170px; padding: 22px; flex-direction: column; align-items: flex-start; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--ink); cursor: pointer; text-align: left; box-shadow: 0 8px 24px var(--shadow); }
+.surface-card:hover { border-color: var(--brand); transform: translateY(-1px); }
+.surface-card strong { margin: 10px 0 auto; font-size: 1.35rem; }
+.card-risk { margin-top: 4px; color: var(--muted); font-size: 0.9rem; }
+.filters { display: flex; gap: 6px; margin: 18px 0; overflow-x: auto; }
+.filter { padding: 8px 12px; border: 1px solid var(--line); background: var(--panel); }
+.filter.active { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); }
+.entry { margin: 10px 0; overflow: clip; border: 1px solid var(--line); border-radius: 13px; background: var(--panel); }
+.entry[hidden] { display: none; }
+.entry summary { display: grid; grid-template-columns: minmax(180px, 1.5fr) minmax(170px, 1fr) 100px minmax(120px, 0.7fr); gap: 16px; align-items: center; padding: 17px 20px; cursor: pointer; list-style: none; }
+.entry summary::-webkit-details-marker { display: none; }
+.entry summary::before { content: "+"; grid-column: 1; grid-row: 1; width: 20px; color: var(--muted); font-weight: 800; transform: translateX(-10px); }
+.entry[open] summary::before { content: "−"; }
+.entry-name { grid-column: 1; grid-row: 1; padding-left: 18px; font-weight: 800; }
+.versions { color: var(--muted); font-variant-numeric: tabular-nums; }
+.status { justify-self: start; padding: 5px 9px; border-radius: 999px; font-size: 0.74rem; font-weight: 850; text-transform: uppercase; }
+.status.breaking { background: var(--danger-soft); color: var(--danger); }
+.status.hold { background: var(--warning-soft); color: var(--warning); }
+.status.unknown { background: var(--unknown-soft); color: var(--unknown); }
+.status.safe { background: var(--safe-soft); color: var(--safe); }
+.group { color: var(--muted); font-size: 0.88rem; }
+.entry-body { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; padding: 4px 24px 24px; border-top: 1px solid var(--line); }
+.entry-body h4 { margin: 20px 0 8px; }
+.entry-body p, .entry-body li { line-height: 1.55; }
+.release-link { display: inline-block; margin-top: 8px; color: var(--brand); font-weight: 750; }
+code { padding: 2px 5px; border-radius: 5px; background: var(--code); font-size: 0.84em; }
+.notice, .empty { margin: 14px 0; padding: 17px 19px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.notice h3 { margin: 0 0 8px; font-size: 1rem; }
+.notice ul { margin: 0; padding-left: 20px; }
+.notice.error { border-color: var(--danger-line); background: var(--danger-soft); }
+.notice.warning { border-color: var(--warning-line); background: var(--warning-soft); }
+.empty { display: flex; gap: 10px; color: var(--safe); }
+.muted, footer { color: var(--muted); }
+footer { padding: 0 0 40px; font-size: 0.84rem; }
+@media screen {
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ink: #e7edf8;
+    --muted: #a7b1c4;
+    --paper: #0e1422;
+    --panel: #171f30;
+    --line: #34405a;
+    --tabs: rgb(23 31 48 / 94%);
+    --shadow: rgb(0 0 0 / 25%);
+    --code: #232d42;
+    --brand: #93adff;
+    --brand-soft: #24345e;
+    --danger: #ffaaa3;
+    --danger-soft: #3b2025;
+    --danger-line: #744047;
+    --warning: #ffd576;
+    --warning-soft: #3a2f17;
+    --warning-line: #6f5b2d;
+    --unknown: #d1bbff;
+    --unknown-soft: #2f2546;
+    --unknown-line: #5e4a83;
+    --safe: #86d9af;
+    --safe-soft: #17382a;
+  }
+}
+@media (max-width: 760px) {
+  .shell { width: min(100% - 20px, 1180px); }
+  header { padding-top: 30px; }
+  .tabs { flex-wrap: wrap; overflow-x: visible; }
+  .filters { flex-wrap: wrap; overflow-x: visible; }
+  .surface-heading { display: block; }
+  .surface-heading .metrics { margin-top: 16px; }
+  .entry summary { grid-template-columns: 1fr auto; gap: 8px 12px; }
+  .entry-name, .versions, .status, .group { grid-column: auto; grid-row: auto; }
+  .entry summary::before { display: none; }
+  .entry-name { padding-left: 0; }
+  .versions { grid-column: 1; }
+  .status { grid-column: 2; grid-row: 1; }
+  .group { grid-column: 2; }
+  .entry-body { grid-template-columns: 1fr; gap: 0; }
+}
+@media print {
+  body { background: white; }
+  .shell { width: 100%; }
+  .tabs, .filters, .overview, footer { display: none !important; }
+  .tab-panel, .js .tab-panel[hidden] { display: block !important; padding: 18px 0; break-before: page; }
+  .entry[hidden] { display: block !important; }
+  .entry { break-inside: avoid; }
+  .entry-body { display: grid; }
+  a { color: inherit; }
+}
+  </style>
+</head>
+<body>
+  <header class="shell">
+    <div class="header-top">
+      <p class="eyebrow">Dependency upgrade report</p>
+      <button class="theme-toggle" type="button" data-theme-toggle>Toggle theme</button>
+    </div>
+    <h1>{{ project_name }}</h1>
+    <p class="subtitle">Generated {{ generated }} from {{ project_root }}</p>
+  </header>
+  <main class="shell">
+    <nav class="tabs" role="tablist" aria-label="Dependency report sections">
+      <button class="tab" type="button" role="tab" data-tab="overview">Overview</button>
+      {% for fragment in fragments %}
+      <button class="tab" type="button" role="tab" data-tab="{{ fragment.surface }}">{{ fragment.label }}</button>
+      {% endfor %}
+    </nav>
+
+    <section class="tab-panel overview" id="panel-overview" role="tabpanel" data-surface="overview">
+      <div class="hero-metrics">
+        {{ metric('outdated', overview.outdated) }}
+        {{ metric('breaking', overview.breaking, 'danger') }}
+        {{ metric('holds', overview.hold, 'warning') }}
+        {{ metric('research errors', overview.errors, 'unknown') }}
+      </div>
+      <div class="surface-cards">
+        {% for fragment in fragments %}
+        <button class="surface-card" type="button" data-open-surface="{{ fragment.surface }}">
+          <span class="eyebrow">{{ fragment.manager }}</span>
+          <strong>{{ fragment.label }}</strong>
+          <span>{{ fragment.entries|length }} outdated</span>
+          <span class="card-risk">{{ fragment.counts.breaking }} breaking, {{ fragment.counts.hold }} held</span>
+        </button>
+        {% endfor %}
+      </div>
+    </section>
+
+    {% for fragment in fragments %}
+    <section class="tab-panel" id="panel-{{ fragment.surface }}" role="tabpanel" data-surface="{{ fragment.surface }}">
+      <div class="surface-heading">
+        <div>
+          <p class="eyebrow">{{ fragment.manager }}</p>
+          <h2>{{ fragment.label }}</h2>
+        </div>
+        <div class="metrics">
+          {{ metric('outdated', fragment.entries|length) }}
+          {{ metric('breaking', fragment.counts.breaking, 'danger') }}
+          {{ metric('holds', fragment.counts.hold, 'warning') }}
+          {{ metric('unknown', fragment.counts.unknown, 'unknown') }}
+        </div>
+      </div>
+      {{ messages('Incomplete research', fragment.errors, 'error') }}
+      {{ messages('Warnings', fragment.warnings, 'warning') }}
+      <div class="filters" role="group" aria-label="Filter {{ fragment.label }} entries">
+        <button type="button" class="filter" data-filter="all">All</button>
+        <button type="button" class="filter" data-filter="breaking">Breaking</button>
+        <button type="button" class="filter" data-filter="hold">Holds</button>
+        <button type="button" class="filter" data-filter="unknown">Unknown</button>
+        <button type="button" class="filter" data-filter="safe">Safe</button>
+      </div>
+      <div class="entries">
+        {% for entry in fragment.entries %}
+        {{ report_entry(entry, fragment.surface, loop.index0) }}
+        {% else %}
+          {% if not fragment.errors %}
+          <div class="empty"><strong>Current</strong><span>No outdated direct dependencies found.</span></div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+  </main>
+  <footer class="shell">Read-only report. No manifests, lockfiles, dependencies, or workflows were changed.</footer>
+  <script>
+const tabs = [...document.querySelectorAll('.tab')];
+const panels = [...document.querySelectorAll('.tab-panel')];
+const themeToggle = document.querySelector('[data-theme-toggle]');
+
+function syncThemeToggle() {
+  const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  const label = `${nextTheme[0].toUpperCase()}${nextTheme.slice(1)} mode`;
+  themeToggle.textContent = label;
+  themeToggle.setAttribute('aria-label', `Switch to ${nextTheme} mode`);
+}
+
+themeToggle.addEventListener('click', () => {
+  const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  reportTheme.apply(nextTheme);
+  reportTheme.save(nextTheme);
+  syncThemeToggle();
+});
+
+reportTheme.media.addEventListener('change', event => {
+  if (reportTheme.read() !== null) return;
+  reportTheme.apply(event.matches ? 'dark' : 'light');
+  syncThemeToggle();
+});
+
+syncThemeToggle();
+
+function openSurface(surface, updateHash = true) {
+  const target = document.querySelector(`[data-surface="${surface}"]`);
+  if (!target) return;
+  panels.forEach(panel => { panel.hidden = panel !== target; });
+  tabs.forEach(tab => tab.setAttribute('aria-selected', String(tab.dataset.tab === surface)));
+  if (updateHash) history.replaceState(null, '', `#${surface}`);
+}
+
+tabs.forEach(tab => tab.addEventListener('click', () => openSurface(tab.dataset.tab)));
+document.querySelectorAll('[data-open-surface]').forEach(card => {
+  card.addEventListener('click', () => openSurface(card.dataset.openSurface));
+});
+
+document.querySelectorAll('.tab-panel').forEach(panel => {
+  const buttons = [...panel.querySelectorAll('.filter')];
+  buttons.forEach(button => {
+    button.addEventListener('click', () => {
+      buttons.forEach(item => item.classList.toggle('active', item === button));
+      panel.querySelectorAll('.entry').forEach(entry => {
+        entry.hidden = button.dataset.filter !== 'all' && entry.dataset.status !== button.dataset.filter;
+      });
+    });
+  });
+  buttons.find(button => button.dataset.filter === 'all')?.classList.add('active');
+});
+
+openSurface(location.hash.slice(1) || 'overview', false);
+
+window.addEventListener('beforeprint', () => {
+  document.querySelectorAll('details').forEach(entry => {
+    entry.dataset.openBeforePrint = String(entry.open);
+    entry.open = true;
+  });
+});
+
+window.addEventListener('afterprint', () => {
+  document.querySelectorAll('details').forEach(entry => {
+    entry.open = entry.dataset.openBeforePrint === 'true';
+    delete entry.dataset.openBeforePrint;
+  });
+});
+  </script>
+</body>
+</html>

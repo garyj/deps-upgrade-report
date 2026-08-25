@@ -34,12 +34,13 @@ The HTML renderer declares Jinja2 through PEP 723. uv installs it in an isolated
 
 ## Install
 
-Clone this repository, then copy or link the `skill` directory into the skill directory used by your agent. For a shared `~/.agents/skills` store:
+Install the skill from GitHub:
 
 ```bash
-ln -s /absolute/path/to/deps-upgrade-report/skill \
-  ~/.agents/skills/deps-upgrade-report
+npx skills@latest add garyj/deps-upgrade-report
 ```
+
+The installer prompts for the target agents and whether to install the skill for the current project or globally.
 
 ## Use
 
@@ -49,6 +50,12 @@ From a supported project, ask your agent:
 Generate a dependency upgrade report for this project.
 ```
 
+or
+
+```text
+/deps-upgrade-report
+```
+
 The default output is `tmp/DEPS_UPGRADE_REPORT.html` inside the assessed project. You can request a different output directory.
 
 ## Development
@@ -56,7 +63,7 @@ The default output is `tmp/DEPS_UPGRADE_REPORT.html` inside the assessed project
 Run the tests:
 
 ```bash
-uv run --with jinja2 python -m unittest discover -s skill/tests -v
+uv run --with jinja2 python -m unittest discover -s skills/deps-upgrade-report/tests -v
 ```
 
 Run strict type checking:
@@ -64,3 +71,7 @@ Run strict type checking:
 ```bash
 uv run --with jinja2 pyright
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

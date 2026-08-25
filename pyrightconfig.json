@@ -1,5 +1,8 @@
 {
-  "include": ["skill/scripts", "skill/tests"],
+  "include": [
+    "skills/deps-upgrade-report/scripts",
+    "skills/deps-upgrade-report/tests"
+  ],
   "pythonVersion": "3.12",
   "typeCheckingMode": "strict"
 }

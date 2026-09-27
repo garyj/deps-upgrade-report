@@ -1,21 +1,3 @@
-{% macro metric(label, value, tone='') -%}
-<div class="metric{% if tone %} {{ tone }}{% endif %}">
-  <span class="metric-value">{{ value }}</span>
-  <span class="metric-label">{{ label }}</span>
-</div>
-{%- endmacro %}
-
-{% macro messages(title, items, tone) -%}
-{% if items %}
-<section class="notice {{ tone }}">
-  <h3>{{ title }}</h3>
-  <ul>
-    {% for item in items %}<li>{{ item }}</li>{% endfor %}
-  </ul>
-</section>
-{% endif %}
-{%- endmacro %}
-
 {% macro locations(items) -%}
 {% if items %}
   {% for location in items %}<code>{{ location.path }}:{{ location.line }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
@@ -24,39 +6,76 @@
 {% endif %}
 {%- endmacro %}
 
-{% macro report_entry(entry, surface, index) -%}
-<details class="entry" data-status="{{ entry.status }}" id="{{ surface|slug }}-{{ entry.name|slug }}-{{ index }}">
-  <summary>
-    <span class="entry-name">{{ entry.name }}</span>
-    <span class="versions">{{ entry.current }} → {{ entry.latest }}</span>
-    <span class="status {{ entry.status }}">{{ entry.status }}</span>
-    <span class="group">{{ entry.group }}</span>
-  </summary>
-  <div class="entry-body">
-    <div>
-      <h4>Changes</h4>
-      <ul>
-        {% for change in entry.changes %}
-        <li>{{ change }}</li>
-        {% else %}
-        <li class="muted">No release-note summary recorded</li>
-        {% endfor %}
-      </ul>
-      {% if entry.changelog_url %}
-      <a class="release-link" href="{{ entry.changelog_url }}" target="_blank" rel="noopener noreferrer">Release notes</a>
-      {% endif %}
+{% macro item(entry) -%}
+<article class="item" data-id="{{ entry.id }}" data-decision="">
+  <div class="row">
+    <div class="who">
+      <span class="name">{{ entry.name }}</span>
+      <span class="group">{{ entry.group }}</span>
     </div>
-    <div>
-      <h4>Project assessment</h4>
-      <p><strong>Risk</strong> {{ entry.risk }}</p>
-      <p><strong>Recommendation</strong> {{ entry.recommendation }}</p>
-      <p><strong>Evidence</strong> {{ locations(entry.locations) }}</p>
-      {% if entry.current_ref is defined or entry.latest_ref is defined %}
-      <p class="refs"><strong>Refs</strong> {{ entry.current_ref|default('❓ unknown') }} to {{ entry.latest_ref|default('❓ unknown') }}</p>
-      {% endif %}
+    <div class="versions">
+      <span class="current">{{ entry.current }}</span>
+      <span class="arrow">→</span>
+      <strong class="target">{{ entry.target }}</strong>
+      {% if entry.target != entry.latest %}<span class="latest">latest {{ entry.latest }}</span>{% endif %}
     </div>
+    <span class="action {{ entry.action }}">{{ entry.action }}</span>
+    {% if entry.changelog_url %}
+    <a class="release-link" href="{{ entry.changelog_url }}" target="_blank" rel="noopener noreferrer">Release notes ↗</a>
+    {% else %}
+    <span class="release-link muted">No release notes</span>
+    {% endif %}
+    <div class="choices server-only" role="group" aria-label="Decision for {{ entry.name }}" hidden>
+      <button type="button" class="choice upgrade" data-decide="upgrade">Upgrade</button>
+      <button type="button" class="choice skip" data-decide="skip">Skip</button>
+      <button type="button" class="choice defer" data-decide="defer">Defer</button>
+    </div>
+    <p class="summary">{{ entry.summary }}</p>
   </div>
-</details>
+  <details class="details">
+    <summary>Changes, steps and evidence</summary>
+    <div class="columns">
+      <div>
+        <h4>What changed</h4>
+        <ul>
+          {% for change in entry.changes %}
+          <li>{{ change }}</li>
+          {% else %}
+          <li class="muted">No release-note summary recorded</li>
+          {% endfor %}
+        </ul>
+        <h4>Risk</h4>
+        <p>{{ entry.risk }}</p>
+      </div>
+      <div>
+        <h4>Steps</h4>
+        <ol>
+          {% for step in entry.steps %}
+          <li>{{ step }}</li>
+          {% else %}
+          <li class="muted">No steps recorded</li>
+          {% endfor %}
+        </ol>
+        <h4>Verify</h4>
+        <ul>
+          {% for check in entry.verify %}
+          <li>{{ check }}</li>
+          {% else %}
+          <li class="muted">No verification recorded</li>
+          {% endfor %}
+        </ul>
+        <p class="evidence"><strong>Evidence</strong> {{ locations(entry.locations) }}</p>
+        {% if entry.current_ref is defined or entry.latest_ref is defined %}
+        <p class="refs"><strong>Refs</strong> {{ entry.current_ref|default('❓ unknown') }} to {{ entry.latest_ref|default('❓ unknown') }}</p>
+        {% endif %}
+      </div>
+    </div>
+    <label class="note-field server-only" hidden>
+      <span>Note for the agent</span>
+      <textarea class="note" rows="2" placeholder="Anything the executing agent should know about this one"></textarea>
+    </label>
+  </details>
+</article>
 {%- endmacro %}
 
 <!doctype html>
@@ -64,7 +83,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dependency upgrade report for {{ project_name }}</title>
+  <title>Dependency upgrade plan for {{ project_name }}</title>
   <script>
 const reportTheme = (() => {
   const key = 'deps-report-theme';
@@ -92,7 +111,6 @@ const reportTheme = (() => {
     }
   }
 
-  root.classList.add('js');
   apply(read() || (media.matches ? 'dark' : 'light'));
   return { apply, media, read, save };
 })();
@@ -105,7 +123,7 @@ const reportTheme = (() => {
   --paper: #f4f6fa;
   --panel: #ffffff;
   --line: #dce1ea;
-  --tabs: rgb(255 255 255 / 94%);
+  --bar: rgb(255 255 255 / 94%);
   --shadow: rgb(23 32 51 / 8%);
   --code: #eef1f6;
   --brand: #2952cc;
@@ -116,79 +134,85 @@ const reportTheme = (() => {
   --warning: #805500;
   --warning-soft: #fff6d8;
   --warning-line: #ead797;
-  --unknown: #5f478f;
-  --unknown-soft: #f3edff;
-  --unknown-line: #d9c9f7;
+  --decide: #5f478f;
+  --decide-soft: #f3edff;
   --safe: #176b45;
   --safe-soft: #e8f7ef;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--paper); color: var(--ink); }
-button, summary { font: inherit; }
+button, summary, textarea { font: inherit; }
+[hidden] { display: none !important; }
 .shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; }
-header { padding: 48px 0 26px; }
-.header-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.header-top .eyebrow { margin: 0; }
-.eyebrow { margin: 0 0 6px; color: var(--brand); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
-h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.4rem); letter-spacing: -0.045em; }
-.subtitle { margin: 12px 0 0; color: var(--muted); }
-.theme-toggle { display: none; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink); cursor: pointer; font-weight: 750; }
-.js .theme-toggle { display: inline-flex; }
-.theme-toggle:hover { border-color: var(--brand); color: var(--brand); }
-.theme-toggle:focus-visible { outline: 3px solid var(--brand-soft); outline-offset: 2px; }
-.tabs { position: sticky; top: 0; z-index: 10; display: flex; gap: 6px; padding: 10px; overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--tabs); box-shadow: 0 12px 32px var(--shadow); backdrop-filter: blur(12px); }
-.tab, .filter { border: 0; border-radius: 9px; background: transparent; color: var(--muted); cursor: pointer; font-weight: 700; white-space: nowrap; }
-.tab { padding: 10px 15px; }
-.tab[aria-selected="true"] { background: var(--ink); color: var(--panel); }
-.tab-panel { padding: 28px 0 60px; }
-.js .tab-panel[hidden] { display: none; }
-.surface-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
-h2 { margin: 0; font-size: 2rem; letter-spacing: -0.035em; }
-.metrics, .hero-metrics { display: flex; flex-wrap: wrap; gap: 10px; }
-.metric { min-width: 96px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
-.metric.danger { background: var(--danger-soft); border-color: var(--danger-line); }
-.metric.warning { background: var(--warning-soft); border-color: var(--warning-line); }
-.metric.unknown { background: var(--unknown-soft); border-color: var(--unknown-line); }
-.metric.unknown .metric-label { color: var(--unknown); }
-.metric-value, .metric-label { display: block; }
-.metric-value { font-size: 1.45rem; font-weight: 850; }
-.metric-label { margin-top: 2px; color: var(--muted); font-size: 0.76rem; font-weight: 700; text-transform: uppercase; }
-.hero-metrics { margin-bottom: 20px; }
-.hero-metrics .metric { flex: 1 1 150px; }
-.surface-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
-.surface-card { display: flex; min-height: 170px; padding: 22px; flex-direction: column; align-items: flex-start; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--ink); cursor: pointer; text-align: left; box-shadow: 0 8px 24px var(--shadow); }
-.surface-card:hover { border-color: var(--brand); transform: translateY(-1px); }
-.surface-card strong { margin: 10px 0 auto; font-size: 1.35rem; }
-.card-risk { margin-top: 4px; color: var(--muted); font-size: 0.9rem; }
-.filters { display: flex; gap: 6px; margin: 18px 0; overflow-x: auto; }
-.filter { padding: 8px 12px; border: 1px solid var(--line); background: var(--panel); }
-.filter.active { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); }
-.entry { margin: 10px 0; overflow: clip; border: 1px solid var(--line); border-radius: 13px; background: var(--panel); }
-.entry[hidden] { display: none; }
-.entry summary { display: grid; grid-template-columns: minmax(180px, 1.5fr) minmax(170px, 1fr) 100px minmax(120px, 0.7fr); gap: 16px; align-items: center; padding: 17px 20px; cursor: pointer; list-style: none; }
-.entry summary::-webkit-details-marker { display: none; }
-.entry summary::before { content: "+"; grid-column: 1; grid-row: 1; width: 20px; color: var(--muted); font-weight: 800; transform: translateX(-10px); }
-.entry[open] summary::before { content: "−"; }
-.entry-name { grid-column: 1; grid-row: 1; padding-left: 18px; font-weight: 800; }
-.versions { color: var(--muted); font-variant-numeric: tabular-nums; }
-.status { justify-self: start; padding: 5px 9px; border-radius: 999px; font-size: 0.74rem; font-weight: 850; text-transform: uppercase; }
-.status.breaking { background: var(--danger-soft); color: var(--danger); }
-.status.hold { background: var(--warning-soft); color: var(--warning); }
-.status.unknown { background: var(--unknown-soft); color: var(--unknown); }
-.status.safe { background: var(--safe-soft); color: var(--safe); }
-.group { color: var(--muted); font-size: 0.88rem; }
-.entry-body { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; padding: 4px 24px 24px; border-top: 1px solid var(--line); }
-.entry-body h4 { margin: 20px 0 8px; }
-.entry-body p, .entry-body li { line-height: 1.55; }
-.release-link { display: inline-block; margin-top: 8px; color: var(--brand); font-weight: 750; }
-code { padding: 2px 5px; border-radius: 5px; background: var(--code); font-size: 0.84em; }
+header { padding: 40px 0 22px; }
+.header-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.eyebrow { margin: 0; color: var(--brand); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+h1 { margin: 6px 0 0; font-size: clamp(2rem, 5vw, 3.2rem); letter-spacing: -0.045em; }
+.subtitle { margin: 10px 0 0; color: var(--muted); }
+.button { display: inline-flex; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink); cursor: pointer; font-weight: 750; }
+.button:hover { border-color: var(--brand); color: var(--brand); }
+.button:focus-visible, .choice:focus-visible { outline: 3px solid var(--brand-soft); outline-offset: 2px; }
+.button.primary { background: var(--ink); border-color: var(--ink); color: var(--panel); }
+.button.primary:hover { background: var(--brand); border-color: var(--brand); color: white; }
+.bar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--bar); box-shadow: 0 12px 32px var(--shadow); backdrop-filter: blur(12px); }
+.bar .progress { font-weight: 800; }
+.bar .status { flex: 1; color: var(--muted); font-size: 0.84rem; }
+main { padding: 22px 0 60px; }
+h2 { margin: 34px 0 6px; font-size: 1.5rem; letter-spacing: -0.03em; }
+h2 .tag { margin-left: 8px; color: var(--muted); font-size: 0.85rem; font-weight: 700; letter-spacing: 0; vertical-align: middle; }
+.section-lead { margin: 0 0 14px; color: var(--muted); }
 .notice, .empty { margin: 14px 0; padding: 17px 19px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .notice h3 { margin: 0 0 8px; font-size: 1rem; }
 .notice ul { margin: 0; padding-left: 20px; }
+.notice li { line-height: 1.5; }
+.notice .tag { color: var(--muted); font-size: 0.8rem; font-weight: 700; margin-right: 6px; }
 .notice.error { border-color: var(--danger-line); background: var(--danger-soft); }
 .notice.warning { border-color: var(--warning-line); background: var(--warning-soft); }
 .empty { display: flex; gap: 10px; color: var(--safe); }
+.item { margin: 10px 0; border: 1px solid var(--line); border-radius: 13px; background: var(--panel); }
+.item[data-decision="upgrade"] { border-left: 5px solid var(--safe); }
+.item[data-decision="skip"] { border-left: 5px solid var(--muted); opacity: 0.72; }
+.item[data-decision="defer"] { border-left: 5px solid var(--warning); }
+.row { display: grid; grid-template-columns: minmax(160px, 1.3fr) minmax(170px, 1fr) auto auto auto; grid-template-areas: "who versions action link choices" "summary summary summary summary summary"; gap: 4px 16px; align-items: center; padding: 14px 18px 6px; }
+.who { grid-area: who; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.name { font-weight: 800; font-size: 1.02rem; }
+.group { color: var(--muted); font-size: 0.84rem; }
+.versions { grid-area: versions; color: var(--muted); font-variant-numeric: tabular-nums; }
+.versions .target { color: var(--ink); }
+.versions .latest { margin-left: 6px; font-size: 0.8rem; }
+.action { grid-area: action; justify-self: start; padding: 5px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 850; text-transform: uppercase; }
+.action.migrate { background: var(--danger-soft); color: var(--danger); }
+.action.hold { background: var(--warning-soft); color: var(--warning); }
+.action.decide { background: var(--decide-soft); color: var(--decide); }
+.action.upgrade { background: var(--safe-soft); color: var(--safe); }
+.release-link { grid-area: link; color: var(--brand); font-size: 0.9rem; font-weight: 750; white-space: nowrap; }
+.release-link.muted { color: var(--muted); font-weight: 600; }
+.choices { grid-area: choices; display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.choice { padding: 7px 11px; border: 0; border-right: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; font-size: 0.82rem; font-weight: 800; }
+.choice:last-child { border-right: 0; }
+.choice:hover { color: var(--ink); background: var(--code); }
+.choice.upgrade.active { background: var(--safe); color: white; }
+.choice.skip.active { background: var(--muted); color: white; }
+.choice.defer.active { background: var(--warning); color: white; }
+.summary { grid-area: summary; margin: 2px 0 0; line-height: 1.5; }
+.details { padding: 0 18px 12px; }
+.details > summary { width: fit-content; color: var(--muted); cursor: pointer; font-size: 0.84rem; font-weight: 750; }
+.details > summary:hover { color: var(--brand); }
+.details[open] > summary { margin-bottom: 4px; }
+.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; border-top: 1px solid var(--line); }
+.details h4 { margin: 18px 0 6px; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.details p, .details li { line-height: 1.55; margin: 4px 0; }
+.details ul, .details ol { margin: 0; padding-left: 20px; }
+code { padding: 2px 5px; border-radius: 5px; background: var(--code); font-size: 0.84em; }
+.note-field { display: block; margin-top: 18px; }
+.note-field span { display: block; margin-bottom: 6px; font-size: 0.82rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.note { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); color: var(--ink); resize: vertical; }
+.note:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+.notes { margin: 14px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.notes summary { padding: 14px 18px; cursor: pointer; font-weight: 750; }
+.notes ul { margin: 0; padding: 0 18px 16px 38px; }
+.notes li { line-height: 1.5; margin: 4px 0; color: var(--muted); font-size: 0.92rem; }
 .muted, footer { color: var(--muted); }
 footer { padding: 0 0 40px; font-size: 0.84rem; }
 @media screen {
@@ -199,7 +223,7 @@ footer { padding: 0 0 40px; font-size: 0.84rem; }
     --paper: #0e1422;
     --panel: #171f30;
     --line: #34405a;
-    --tabs: rgb(23 31 48 / 94%);
+    --bar: rgb(23 31 48 / 94%);
     --shadow: rgb(0 0 0 / 25%);
     --code: #232d42;
     --brand: #93adff;
@@ -210,37 +234,25 @@ footer { padding: 0 0 40px; font-size: 0.84rem; }
     --warning: #ffd576;
     --warning-soft: #3a2f17;
     --warning-line: #6f5b2d;
-    --unknown: #d1bbff;
-    --unknown-soft: #2f2546;
-    --unknown-line: #5e4a83;
+    --decide: #d1bbff;
+    --decide-soft: #2f2546;
     --safe: #86d9af;
     --safe-soft: #17382a;
   }
+  :root[data-theme="dark"] .choice.upgrade.active, :root[data-theme="dark"] .choice.defer.active { color: #0e1422; }
 }
-@media (max-width: 760px) {
+@media (max-width: 820px) {
   .shell { width: min(100% - 20px, 1180px); }
-  header { padding-top: 30px; }
-  .tabs { flex-wrap: wrap; overflow-x: visible; }
-  .filters { flex-wrap: wrap; overflow-x: visible; }
-  .surface-heading { display: block; }
-  .surface-heading .metrics { margin-top: 16px; }
-  .entry summary { grid-template-columns: 1fr auto; gap: 8px 12px; }
-  .entry-name, .versions, .status, .group { grid-column: auto; grid-row: auto; }
-  .entry summary::before { display: none; }
-  .entry-name { padding-left: 0; }
-  .versions { grid-column: 1; }
-  .status { grid-column: 2; grid-row: 1; }
-  .group { grid-column: 2; }
-  .entry-body { grid-template-columns: 1fr; gap: 0; }
+  header { padding-top: 26px; }
+  .row { grid-template-columns: 1fr auto; grid-template-areas: "who action" "versions link" "summary summary" "choices choices"; }
+  .choices { justify-self: start; margin-top: 6px; }
+  .columns { grid-template-columns: 1fr; gap: 0; }
 }
 @media print {
   body { background: white; }
   .shell { width: 100%; }
-  .tabs, .filters, .overview, footer { display: none !important; }
-  .tab-panel, .js .tab-panel[hidden] { display: block !important; padding: 18px 0; break-before: page; }
-  .entry[hidden] { display: block !important; }
-  .entry { break-inside: avoid; }
-  .entry-body { display: grid; }
+  .bar, .button, .server-only, footer { display: none !important; }
+  .item { break-inside: avoid; opacity: 1; }
   a { color: inherit; }
 }
   </style>
@@ -248,143 +260,160 @@ footer { padding: 0 0 40px; font-size: 0.84rem; }
 <body>
   <header class="shell">
     <div class="header-top">
-      <p class="eyebrow">Dependency upgrade report</p>
-      <button class="theme-toggle" type="button" data-theme-toggle>Toggle theme</button>
+      <p class="eyebrow">Dependency upgrade plan</p>
+      <button class="button" type="button" data-theme-toggle>Toggle theme</button>
     </div>
     <h1>{{ project_name }}</h1>
-    <p class="subtitle">Generated {{ generated }} from {{ project_root }}</p>
+    <p class="subtitle">Generated {{ generated }} from {{ project_root }}. {{ overview.outdated }} outdated: {{ overview.decide }} decide, {{ overview.migrate }} migrate, {{ overview.hold }} hold, {{ overview.upgrade }} upgrade.</p>
   </header>
   <main class="shell">
-    <nav class="tabs" role="tablist" aria-label="Dependency report sections">
-      <button class="tab" type="button" role="tab" data-tab="overview">Overview</button>
-      {% for fragment in fragments %}
-      <button class="tab" type="button" role="tab" data-tab="{{ fragment.surface }}">{{ fragment.label }}</button>
-      {% endfor %}
-    </nav>
+    <div class="bar server-only" hidden>
+      <span class="progress"><b data-decided>0</b> of {{ overview.outdated }} decided</span>
+      <span class="status" data-status></span>
+      <button class="button primary" type="button" data-finish>Finish review</button>
+    </div>
 
-    <section class="tab-panel overview" id="panel-overview" role="tabpanel" data-surface="overview">
-      <div class="hero-metrics">
-        {{ metric('outdated', overview.outdated) }}
-        {{ metric('breaking', overview.breaking, 'danger') }}
-        {{ metric('holds', overview.hold, 'warning') }}
-        {{ metric('research errors', overview.errors, 'unknown') }}
-      </div>
-      <div class="surface-cards">
-        {% for fragment in fragments %}
-        <button class="surface-card" type="button" data-open-surface="{{ fragment.surface }}">
-          <span class="eyebrow">{{ fragment.manager }}</span>
-          <strong>{{ fragment.label }}</strong>
-          <span>{{ fragment.entries|length }} outdated</span>
-          <span class="card-risk">{{ fragment.counts.breaking }} breaking, {{ fragment.counts.hold }} held</span>
-        </button>
-        {% endfor %}
-      </div>
+    {% set blockers = [] %}
+    {% for fragment in fragments %}{% for blocker in fragment.blockers %}{% set _ = blockers.append((fragment.label, blocker)) %}{% endfor %}{% endfor %}
+    {% set errors = [] %}
+    {% for fragment in fragments %}{% for error in fragment.errors %}{% set _ = errors.append((fragment.label, error)) %}{% endfor %}{% endfor %}
+    {% if errors %}
+    <section class="notice error">
+      <h3>Incomplete research</h3>
+      <ul>{% for label, error in errors %}<li><span class="tag">{{ label }}</span>{{ error }}</li>{% endfor %}</ul>
     </section>
+    {% endif %}
+    {% if blockers %}
+    <section class="notice warning">
+      <h3>Check before you start</h3>
+      <ul>{% for label, blocker in blockers %}<li><span class="tag">{{ label }}</span>{{ blocker }}</li>{% endfor %}</ul>
+    </section>
+    {% endif %}
+
+    {% set batch_number = namespace(value=0) %}
+    {% for fragment in fragments %}
+      {% for batch in fragment.batches %}
+      {% set batch_number.value = batch_number.value + 1 %}
+      <section>
+        <h2>Batch {{ batch_number.value }}: {{ batch.name }}<span class="tag">{{ fragment.label }}</span></h2>
+        <p class="section-lead">{{ batch.reason }}</p>
+        {% for entry in batch.entries %}{{ item(entry) }}{% endfor %}
+      </section>
+      {% endfor %}
+    {% endfor %}
 
     {% for fragment in fragments %}
-    <section class="tab-panel" id="panel-{{ fragment.surface }}" role="tabpanel" data-surface="{{ fragment.surface }}">
-      <div class="surface-heading">
-        <div>
-          <p class="eyebrow">{{ fragment.manager }}</p>
-          <h2>{{ fragment.label }}</h2>
-        </div>
-        <div class="metrics">
-          {{ metric('outdated', fragment.entries|length) }}
-          {{ metric('breaking', fragment.counts.breaking, 'danger') }}
-          {{ metric('holds', fragment.counts.hold, 'warning') }}
-          {{ metric('unknown', fragment.counts.unknown, 'unknown') }}
-        </div>
-      </div>
-      {{ messages('Incomplete research', fragment.errors, 'error') }}
-      {{ messages('Warnings', fragment.warnings, 'warning') }}
-      <div class="filters" role="group" aria-label="Filter {{ fragment.label }} entries">
-        <button type="button" class="filter" data-filter="all">All</button>
-        <button type="button" class="filter" data-filter="breaking">Breaking</button>
-        <button type="button" class="filter" data-filter="hold">Holds</button>
-        <button type="button" class="filter" data-filter="unknown">Unknown</button>
-        <button type="button" class="filter" data-filter="safe">Safe</button>
-      </div>
-      <div class="entries">
-        {% for entry in fragment.entries %}
-        {{ report_entry(entry, fragment.surface, loop.index0) }}
-        {% else %}
-          {% if not fragment.errors %}
-          <div class="empty"><strong>Current</strong><span>No outdated direct dependencies found.</span></div>
-          {% endif %}
-        {% endfor %}
-      </div>
+    <section>
+      <h2>{{ fragment.label }}<span class="tag">{{ fragment.manager }} · {{ fragment.remaining|length }} of {{ fragment.entries|length }} outside batches</span></h2>
+      {% for entry in fragment.remaining %}
+        {{ item(entry) }}
+      {% else %}
+        {% if not fragment.entries and not fragment.errors %}
+        <div class="empty"><strong>Current</strong><span>No outdated direct dependencies found.</span></div>
+        {% elif fragment.entries %}
+        <p class="section-lead">Every {{ fragment.label }} entry belongs to a batch above.</p>
+        {% endif %}
+      {% endfor %}
     </section>
+    {% endfor %}
+
+    {% for fragment in fragments if fragment.notes %}
+    <details class="notes">
+      <summary>{{ fragment.label }} research notes ({{ fragment.notes|length }})</summary>
+      <ul>{% for note in fragment.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+    </details>
     {% endfor %}
   </main>
   <footer class="shell">Read-only report. No manifests, lockfiles, dependencies, or workflows were changed.</footer>
+  <script id="plan-data" type="application/json">{{ plan|tojson }}</script>
   <script>
-const tabs = [...document.querySelectorAll('.tab')];
-const panels = [...document.querySelectorAll('.tab-panel')];
 const themeToggle = document.querySelector('[data-theme-toggle]');
-
 function syncThemeToggle() {
   const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-  const label = `${nextTheme[0].toUpperCase()}${nextTheme.slice(1)} mode`;
-  themeToggle.textContent = label;
-  themeToggle.setAttribute('aria-label', `Switch to ${nextTheme} mode`);
+  themeToggle.textContent = `${nextTheme[0].toUpperCase()}${nextTheme.slice(1)} mode`;
 }
-
 themeToggle.addEventListener('click', () => {
   const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
   reportTheme.apply(nextTheme);
   reportTheme.save(nextTheme);
   syncThemeToggle();
 });
-
 reportTheme.media.addEventListener('change', event => {
   if (reportTheme.read() !== null) return;
   reportTheme.apply(event.matches ? 'dark' : 'light');
   syncThemeToggle();
 });
-
 syncThemeToggle();
 
-function openSurface(surface, updateHash = true) {
-  const target = document.querySelector(`[data-surface="${surface}"]`);
-  if (!target) return;
-  panels.forEach(panel => { panel.hidden = panel !== target; });
-  tabs.forEach(tab => tab.setAttribute('aria-selected', String(tab.dataset.tab === surface)));
-  if (updateHash) history.replaceState(null, '', `#${surface}`);
+window.addEventListener('beforeprint', () => {
+  document.querySelectorAll('details').forEach(details => { details.open = true; });
+});
+
+const items = [...document.querySelectorAll('.item')];
+const status = document.querySelector('[data-status]');
+let decisions = {};
+let saving = Promise.resolve();
+
+function decisionOf(id) {
+  return decisions[id] || { decision: '', note: '' };
 }
 
-tabs.forEach(tab => tab.addEventListener('click', () => openSurface(tab.dataset.tab)));
-document.querySelectorAll('[data-open-surface]').forEach(card => {
-  card.addEventListener('click', () => openSurface(card.dataset.openSurface));
-});
-
-document.querySelectorAll('.tab-panel').forEach(panel => {
-  const buttons = [...panel.querySelectorAll('.filter')];
-  buttons.forEach(button => {
-    button.addEventListener('click', () => {
-      buttons.forEach(item => item.classList.toggle('active', item === button));
-      panel.querySelectorAll('.entry').forEach(entry => {
-        entry.hidden = button.dataset.filter !== 'all' && entry.dataset.status !== button.dataset.filter;
-      });
+function render() {
+  for (const item of items) {
+    const { decision, note } = decisionOf(item.dataset.id);
+    item.dataset.decision = decision;
+    item.querySelectorAll('.choice').forEach(button => {
+      button.classList.toggle('active', button.dataset.decide === decision);
+      button.setAttribute('aria-pressed', String(button.dataset.decide === decision));
     });
-  });
-  buttons.find(button => button.dataset.filter === 'all')?.classList.add('active');
+    item.querySelector('.note').value = note;
+  }
+  document.querySelector('[data-decided]').textContent = items.filter(item => item.dataset.decision).length;
+}
+
+function update(id, change) {
+  decisions[id] = { ...decisionOf(id), ...change };
+  render();
+  const body = JSON.stringify(decisions);
+  saving = saving
+    .then(() => fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body }))
+    .then(response => { status.textContent = response.ok ? 'Saved' : `Not saved: ${response.status}`; })
+    .catch(() => { status.textContent = 'Not saved: the review server has stopped'; });
+}
+
+for (const item of items) {
+  const id = item.dataset.id;
+  item.querySelectorAll('.choice').forEach(button => button.addEventListener('click', () => {
+    update(id, { decision: decisionOf(id).decision === button.dataset.decide ? '' : button.dataset.decide });
+  }));
+  item.querySelector('.note').addEventListener('change', event => update(id, { note: event.target.value }));
+}
+
+document.querySelector('[data-finish]').addEventListener('click', async event => {
+  await saving;
+  try {
+    const response = await fetch('/api/finish', { method: 'POST' });
+    if (!response.ok) throw new Error(String(response.status));
+    const result = await response.json();
+    event.target.disabled = true;
+    status.textContent = `Plan written to ${result.plan}. The review server has stopped; you can close this tab.`;
+  } catch {
+    status.textContent = 'Could not reach the review server.';
+  }
 });
 
-openSurface(location.hash.slice(1) || 'overview', false);
+async function connect() {
+  if (location.protocol !== 'http:') return;
+  const response = await fetch('/api/state', { cache: 'no-store' });
+  if (!response.ok) return;
+  const state = await response.json();
+  decisions = state.decisions;
+  status.textContent = `Saving to ${state.state_file}`;
+  document.querySelectorAll('.server-only').forEach(node => { node.hidden = false; });
+  render();
+}
 
-window.addEventListener('beforeprint', () => {
-  document.querySelectorAll('details').forEach(entry => {
-    entry.dataset.openBeforePrint = String(entry.open);
-    entry.open = true;
-  });
-});
-
-window.addEventListener('afterprint', () => {
-  document.querySelectorAll('details').forEach(entry => {
-    entry.open = entry.dataset.openBeforePrint === 'true';
-    delete entry.dataset.openBeforePrint;
-  });
-});
+connect().catch(() => {});
   </script>
 </body>
 </html>

@@ -36,16 +36,24 @@ Check for:
 
 Search the project's workflows and local action definitions for affected inputs, outputs, permissions, and paths. Cite exact paths and lines.
 
+## Decide the action
+
+- `upgrade` when the workflow uses no affected input, output, permission, or runner feature.
+- `migrate` when a workflow or local action must change. Put each edit in `steps` with its path and line.
+- `decide` when a person must choose first, such as a self-hosted runner whose version cannot be confirmed, or an open Dependabot pull request that already proposes the same change.
+- `hold` only when the project records why the pin must stay.
+
+A branch pin whose movement is `❓ unknown` is a `decide` entry with the unknown stated in `summary`. Actions checked and found current need no entry and no note.
+
 ## Write the fragment
 
-Write `<output_dir>/DEPS_UPGRADE_REPORT_ACTIONS.json` with:
+Keep each entry within the schema's word limits. Use `current_ref` and `latest_ref` for SHA or branch details.
 
-- `surface`: `actions`
-- `label`: `GitHub Actions`
-- `manager`: `github-actions`
-- one entry per unique `owner/repo` and ref combination
-- all source locations retained in `locations`
-- an empty `entries` list when every action is current
-- command or research failures in `errors`
+Sort the remaining facts into the top-level lists:
 
-Use `current_ref` and `latest_ref` for SHA or branch details. Sort entries by status priority, then action name. Return the counts, errors, warnings, and absolute fragment path.
+- `batches`: actions that should move in one workflow edit, such as every action a single job pins.
+- `blockers`: facts that change whether an upgrade can proceed, such as a self-hosted runner below the required version.
+- `notes`: how the research was done, including sources that failed and what was used instead.
+- `errors`: research that could not be completed.
+
+Write `<output_dir>/DEPS_UPGRADE_REPORT_ACTIONS.json` with `surface` `actions`, `label` `GitHub Actions`, and `manager` `github-actions`, one entry per unique `owner/repo` and ref combination with all source locations retained in `locations`, and an empty `entries` list when every action is current. Sort entries by action priority (decide, migrate, hold, upgrade), then action name. Return the counts per action, the batch names, blockers, errors, and the absolute fragment path.

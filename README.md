@@ -1,12 +1,12 @@
 # Dependency upgrade report
 
-A read-only agent skill that finds outdated direct dependencies, researches the relevant releases, checks how upgrades affect the codebase, and produces one self-contained HTML report.
+A read-only agent skill that finds outdated direct dependencies, researches the relevant releases, checks how upgrades affect the codebase, and produces one self-contained HTML upgrade plan you can read and hand to an agent.
 
 ## Why this exists
 
 Client projects sometimes sit untouched for months. Coming back to a stack of Dependabot PRs makes it hard to see the overall job before starting.
 
-This skill gives you one report to scan first. It shows what is outdated, what may break, what should be held, and where the project uses the affected dependency. You can then plan the upgrade work without opening every dependency PR individually.
+This skill gives you one page to scan first. It shows what is outdated, what needs a migration, what needs a decision, and what must be held, with the project locations that matter. For a bigger catch-up you can decide per package, and the decisions become a Markdown plan another agent can execute.
 
 ## What it checks
 
@@ -18,9 +18,13 @@ The skill detects the dependency types present in the project and can research t
 
 ## The report
 
-The generated HTML file has an overview and separate tabs for Python, Node, and GitHub Actions. Entries include release-note links, breaking-change assessments, recommendations, and project locations.
+The page opens with anything to check before starting, then the batches of packages that must move together, then the remaining packages per dependency type. Each row shows the package, the version to move to, an action (upgrade, migrate, decide, or hold), a one-line summary, and a link to the release notes. Changes, steps, verification, and evidence sit behind an expander. Research notes are collapsed at the end. The page works directly from a `file://` URL and includes light and dark modes.
 
-The report works directly from a `file://` URL, needs no web server, and includes light and dark modes. The selected colour mode is remembered locally.
+## The review server
+
+`scripts/review-report.py` serves the same page on `127.0.0.1` and adds Upgrade, Skip, and Defer buttons and a note field to every row. It saves every decision to `DEPS_UPGRADE_PLAN.json` as it happens. Finish review in the page writes `DEPS_UPGRADE_PLAN.md`, prints it to stdout, and stops the server. Stopping early keeps the decisions; running the command again resumes them.
+
+The plan opens with instructions for the executing agent and the blockers to check first. It then lists accepted upgrades by batch with their steps and verification, followed by the skipped, deferred, and undecided packages. A batch runs only when every package in it is accepted; otherwise it is listed as incomplete.
 
 ## Requirements
 
@@ -30,7 +34,7 @@ The report works directly from a `file://` URL, needs no web server, and include
 - GitHub CLI when the project has GitHub Actions
 - Internet access for package metadata, changelogs, and release notes
 
-The HTML renderer declares Jinja2 through PEP 723. uv installs it in an isolated environment and uses the adjacent script lockfile.
+The renderer declares Jinja2 and the review server declares FastAPI and uvicorn through PEP 723. uv installs them in isolated environments and uses the adjacent script lockfiles.
 
 ## Install
 
@@ -58,18 +62,26 @@ or
 
 The default output is `tmp/DEPS_UPGRADE_REPORT.html` inside the assessed project. You can request a different output directory.
 
+To decide in the browser and get the plan back on disk:
+
+```bash
+uv run --script <skill_dir>/scripts/review-report.py --report tmp/DEPS_UPGRADE_REPORT.html
+```
+
+Then hand `tmp/DEPS_UPGRADE_PLAN.md` to an agent to execute.
+
 ## Development
 
 Run the tests:
 
 ```bash
-uv run --with jinja2 python -m unittest discover -s skills/deps-upgrade-report/tests -v
+uv run --with jinja2 --with fastapi --with uvicorn python -m unittest discover -s skills/deps-upgrade-report/tests -v
 ```
 
 Run strict type checking:
 
 ```bash
-uv run --with jinja2 pyright
+uv run --with jinja2 --with fastapi --with uvicorn pyright
 ```
 
 ## License

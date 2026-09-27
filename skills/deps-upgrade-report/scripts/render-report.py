@@ -280,7 +280,6 @@ def render_document(fragments: list[dict[str, Any]], project_root: Path) -> str:
         project_name=project_root.name,
         project_root=project_root,
         generated=generated,
-        report_id=report_id,
         fragments=report_fragments,
         overview={
             'outdated': sum(len(fragment['entries']) for fragment in fragments),

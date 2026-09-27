@@ -1,14 +1,3 @@
-{% macro messages(title, items, tone) -%}
-{% if items %}
-<section class="notice {{ tone }}">
-  <h3>{{ title }}</h3>
-  <ul>
-    {% for item in items %}<li>{{ item }}</li>{% endfor %}
-  </ul>
-</section>
-{% endif %}
-{%- endmacro %}
-
 {% macro locations(items) -%}
 {% if items %}
   {% for location in items %}<code>{{ location.path }}:{{ location.line }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
@@ -17,14 +6,9 @@
 {% endif %}
 {%- endmacro %}
 
-{% macro item(entry, fragment) -%}
-<article class="item" id="{{ entry.id }}" data-id="{{ entry.id }}" data-action="{{ entry.action }}" data-surface="{{ fragment.surface }}" data-decision="" tabindex="0">
+{% macro item(entry) -%}
+<article class="item" data-id="{{ entry.id }}" data-decision="">
   <div class="row">
-    <div class="decide" role="group" aria-label="Decision for {{ entry.name }}">
-      <button type="button" class="choice upgrade" data-decide="upgrade" title="Upgrade (u)">Upgrade</button>
-      <button type="button" class="choice skip" data-decide="skip" title="Skip (s)">Skip</button>
-      <button type="button" class="choice defer" data-decide="defer" title="Defer (d)">Defer</button>
-    </div>
     <div class="who">
       <span class="name">{{ entry.name }}</span>
       <span class="group">{{ entry.group }}</span>
@@ -36,11 +20,20 @@
       {% if entry.target != entry.latest %}<span class="latest">latest {{ entry.latest }}</span>{% endif %}
     </div>
     <span class="action {{ entry.action }}">{{ entry.action }}</span>
-    <button type="button" class="more" aria-expanded="false" title="Details (o)">Details</button>
+    {% if entry.changelog_url %}
+    <a class="release-link" href="{{ entry.changelog_url }}" target="_blank" rel="noopener noreferrer">Release notes ↗</a>
+    {% else %}
+    <span class="release-link muted">No release notes</span>
+    {% endif %}
+    <div class="decide server-only" role="group" aria-label="Decision for {{ entry.name }}" hidden>
+      <button type="button" class="choice upgrade" data-decide="upgrade">Upgrade</button>
+      <button type="button" class="choice skip" data-decide="skip">Skip</button>
+      <button type="button" class="choice defer" data-decide="defer">Defer</button>
+    </div>
     <p class="summary">{{ entry.summary }}</p>
-    <span class="note-flag" hidden>note</span>
   </div>
-  <div class="details" hidden>
+  <details class="details">
+    <summary>Changes, steps and evidence</summary>
     <div class="columns">
       <div>
         <h4>What changed</h4>
@@ -51,9 +44,6 @@
           <li class="muted">No release-note summary recorded</li>
           {% endfor %}
         </ul>
-        {% if entry.changelog_url %}
-        <a class="release-link" href="{{ entry.changelog_url }}" target="_blank" rel="noopener noreferrer">Release notes</a>
-        {% endif %}
         <h4>Risk</h4>
         <p>{{ entry.risk }}</p>
       </div>
@@ -80,11 +70,11 @@
         {% endif %}
       </div>
     </div>
-    <label class="note-field">
+    <label class="note-field server-only" hidden>
       <span>Note for the agent</span>
       <textarea class="note" rows="2" placeholder="Anything the executing agent should know about this one"></textarea>
     </label>
-  </div>
+  </details>
 </article>
 {%- endmacro %}
 
@@ -121,7 +111,6 @@ const reportTheme = (() => {
     }
   }
 
-  root.classList.add('js');
   apply(read() || (media.matches ? 'dark' : 'light'));
   return { apply, media, read, save };
 })();
@@ -147,48 +136,32 @@ const reportTheme = (() => {
   --warning-line: #ead797;
   --decide: #5f478f;
   --decide-soft: #f3edff;
-  --decide-line: #d9c9f7;
   --safe: #176b45;
   --safe-soft: #e8f7ef;
-  --safe-line: #b9e3cc;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--paper); color: var(--ink); }
 button, summary, textarea { font: inherit; }
+[hidden] { display: none !important; }
 .shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; }
 header { padding: 40px 0 22px; }
 .header-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.header-top .eyebrow { margin: 0; }
-.eyebrow { margin: 0 0 6px; color: var(--brand); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
-h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.2rem); letter-spacing: -0.045em; }
+.eyebrow { margin: 0; color: var(--brand); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+h1 { margin: 6px 0 0; font-size: clamp(2rem, 5vw, 3.2rem); letter-spacing: -0.045em; }
 .subtitle { margin: 10px 0 0; color: var(--muted); }
-.toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
-.button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink); cursor: pointer; font-weight: 750; }
+.button { display: inline-flex; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink); cursor: pointer; font-weight: 750; }
 .button:hover { border-color: var(--brand); color: var(--brand); }
-.button:focus-visible, .choice:focus-visible, .more:focus-visible, .chip:focus-visible { outline: 3px solid var(--brand-soft); outline-offset: 2px; }
+.button:focus-visible, .choice:focus-visible { outline: 3px solid var(--brand-soft); outline-offset: 2px; }
 .button.primary { background: var(--ink); border-color: var(--ink); color: var(--panel); }
 .button.primary:hover { background: var(--brand); border-color: var(--brand); color: white; }
-.button[hidden], .js-only[hidden] { display: none; }
-.hud { position: sticky; top: 0; z-index: 10; display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--bar); box-shadow: 0 12px 32px var(--shadow); backdrop-filter: blur(12px); }
-.hud-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.progress { font-weight: 800; }
-.progress small { color: var(--muted); font-weight: 600; }
-.bar { flex: 1 1 160px; height: 8px; border-radius: 999px; background: var(--code); overflow: hidden; }
-.bar span { display: block; height: 100%; width: 0; background: var(--brand); transition: width 0.2s; }
-.save-status { color: var(--muted); font-size: 0.84rem; }
-.chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.chips .label { align-self: center; color: var(--muted); font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 2px; }
-.chip { padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); cursor: pointer; font-size: 0.84rem; font-weight: 750; white-space: nowrap; }
-.chip.active { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); }
-.chip b { color: var(--ink); }
-.keys { color: var(--muted); font-size: 0.8rem; }
-.keys kbd { padding: 1px 5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: var(--panel); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; }
+.bar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--bar); box-shadow: 0 12px 32px var(--shadow); backdrop-filter: blur(12px); }
+.bar .progress { font-weight: 800; }
+.bar .status { flex: 1; color: var(--muted); font-size: 0.84rem; }
 main { padding: 22px 0 60px; }
 h2 { margin: 34px 0 6px; font-size: 1.5rem; letter-spacing: -0.03em; }
 h2 .tag { margin-left: 8px; color: var(--muted); font-size: 0.85rem; font-weight: 700; letter-spacing: 0; vertical-align: middle; }
 .section-lead { margin: 0 0 14px; color: var(--muted); }
-.section[hidden] { display: none; }
 .notice, .empty { margin: 14px 0; padding: 17px 19px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .notice h3 { margin: 0 0 8px; font-size: 1rem; }
 .notice ul { margin: 0; padding-left: 20px; }
@@ -198,19 +171,10 @@ h2 .tag { margin-left: 8px; color: var(--muted); font-size: 0.85rem; font-weight
 .notice.warning { border-color: var(--warning-line); background: var(--warning-soft); }
 .empty { display: flex; gap: 10px; color: var(--safe); }
 .item { margin: 10px 0; border: 1px solid var(--line); border-radius: 13px; background: var(--panel); }
-.item[hidden] { display: none; }
-.item:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
 .item[data-decision="upgrade"] { border-left: 5px solid var(--safe); }
 .item[data-decision="skip"] { border-left: 5px solid var(--muted); opacity: 0.72; }
 .item[data-decision="defer"] { border-left: 5px solid var(--warning); }
-.row { display: grid; grid-template-columns: auto minmax(160px, 1.3fr) minmax(170px, 1fr) auto auto; grid-template-areas: "decide who versions action more" "decide summary summary summary flag"; gap: 4px 16px; align-items: center; padding: 14px 18px; }
-.decide { grid-area: decide; display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
-.choice { padding: 7px 11px; border: 0; border-right: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; font-size: 0.82rem; font-weight: 800; }
-.choice:last-child { border-right: 0; }
-.choice:hover { color: var(--ink); background: var(--code); }
-.choice.upgrade.active { background: var(--safe); color: white; }
-.choice.skip.active { background: var(--muted); color: white; }
-.choice.defer.active { background: var(--warning); color: white; }
+.row { display: grid; grid-template-columns: minmax(160px, 1.3fr) minmax(170px, 1fr) auto auto auto; grid-template-areas: "who versions action link decide" "summary summary summary summary summary"; gap: 4px 16px; align-items: center; padding: 14px 18px 6px; }
 .who { grid-area: who; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .name { font-weight: 800; font-size: 1.02rem; }
 .group { color: var(--muted); font-size: 0.84rem; }
@@ -222,18 +186,24 @@ h2 .tag { margin-left: 8px; color: var(--muted); font-size: 0.85rem; font-weight
 .action.hold { background: var(--warning-soft); color: var(--warning); }
 .action.decide { background: var(--decide-soft); color: var(--decide); }
 .action.upgrade { background: var(--safe-soft); color: var(--safe); }
-.more { grid-area: more; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; font-size: 0.82rem; font-weight: 750; }
-.more:hover, .more[aria-expanded="true"] { border-color: var(--brand); color: var(--brand); }
+.release-link { grid-area: link; color: var(--brand); font-size: 0.9rem; font-weight: 750; white-space: nowrap; }
+.release-link.muted { color: var(--muted); font-weight: 600; }
+.decide { grid-area: decide; display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.choice { padding: 7px 11px; border: 0; border-right: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; font-size: 0.82rem; font-weight: 800; }
+.choice:last-child { border-right: 0; }
+.choice:hover { color: var(--ink); background: var(--code); }
+.choice.upgrade.active { background: var(--safe); color: white; }
+.choice.skip.active { background: var(--muted); color: white; }
+.choice.defer.active { background: var(--warning); color: white; }
 .summary { grid-area: summary; margin: 2px 0 0; line-height: 1.5; }
-.note-flag { grid-area: flag; justify-self: end; color: var(--brand); font-size: 0.74rem; font-weight: 800; text-transform: uppercase; }
-.note-flag[hidden] { display: none; }
-.details { padding: 4px 22px 20px; border-top: 1px solid var(--line); }
-.details[hidden] { display: none; }
-.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.details { padding: 0 18px 12px; }
+.details > summary { width: fit-content; color: var(--muted); cursor: pointer; font-size: 0.84rem; font-weight: 750; }
+.details > summary:hover { color: var(--brand); }
+.details[open] > summary { margin-bottom: 4px; }
+.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; border-top: 1px solid var(--line); }
 .details h4 { margin: 18px 0 6px; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .details p, .details li { line-height: 1.55; margin: 4px 0; }
 .details ul, .details ol { margin: 0; padding-left: 20px; }
-.release-link { display: inline-block; margin-top: 6px; color: var(--brand); font-weight: 750; }
 code { padding: 2px 5px; border-radius: 5px; background: var(--code); font-size: 0.84em; }
 .note-field { display: block; margin-top: 18px; }
 .note-field span { display: block; margin-bottom: 6px; font-size: 0.82rem; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
@@ -245,11 +215,6 @@ code { padding: 2px 5px; border-radius: 5px; background: var(--code); font-size:
 .notes li { line-height: 1.5; margin: 4px 0; color: var(--muted); font-size: 0.92rem; }
 .muted, footer { color: var(--muted); }
 footer { padding: 0 0 40px; font-size: 0.84rem; }
-.toast { position: fixed; left: 50%; bottom: 24px; z-index: 20; transform: translateX(-50%); padding: 12px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--ink); color: var(--panel); box-shadow: 0 12px 32px var(--shadow); font-weight: 700; }
-.toast[hidden] { display: none; }
-dialog { width: min(760px, calc(100% - 32px)); padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink); }
-dialog::backdrop { background: rgb(23 32 51 / 40%); }
-dialog textarea { width: 100%; min-height: 50vh; margin: 12px 0; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.84rem; }
 @media screen {
   :root[data-theme="dark"] {
     color-scheme: dark;
@@ -271,27 +236,23 @@ dialog textarea { width: 100%; min-height: 50vh; margin: 12px 0; padding: 10px; 
     --warning-line: #6f5b2d;
     --decide: #d1bbff;
     --decide-soft: #2f2546;
-    --decide-line: #5e4a83;
     --safe: #86d9af;
     --safe-soft: #17382a;
-    --safe-line: #2d5a44;
   }
   :root[data-theme="dark"] .choice.upgrade.active, :root[data-theme="dark"] .choice.defer.active { color: #0e1422; }
 }
 @media (max-width: 820px) {
   .shell { width: min(100% - 20px, 1180px); }
   header { padding-top: 26px; }
-  .row { grid-template-columns: 1fr auto; grid-template-areas: "who action" "versions more" "summary summary" "decide flag"; }
+  .row { grid-template-columns: 1fr auto; grid-template-areas: "who action" "versions link" "summary summary" "decide decide"; }
   .decide { justify-self: start; margin-top: 6px; }
   .columns { grid-template-columns: 1fr; gap: 0; }
 }
 @media print {
   body { background: white; }
   .shell { width: 100%; }
-  .hud, .toolbar, .decide, .more, .note-field, footer, .toast, dialog { display: none !important; }
-  .item, .item[hidden], .section[hidden] { display: block !important; break-inside: avoid; opacity: 1; }
-  .details, .details[hidden] { display: block !important; }
-  .notes[open] summary { font-weight: 800; }
+  .bar, .button, .server-only, footer { display: none !important; }
+  .item { break-inside: avoid; opacity: 1; }
   a { color: inherit; }
 }
   </style>
@@ -300,42 +261,16 @@ dialog textarea { width: 100%; min-height: 50vh; margin: 12px 0; padding: 10px; 
   <header class="shell">
     <div class="header-top">
       <p class="eyebrow">Dependency upgrade plan</p>
-      <div class="toolbar js-only" hidden>
-        <button class="button" type="button" data-copy>Copy plan</button>
-        <button class="button" type="button" data-export>Export plan</button>
-        <button class="button primary" type="button" data-finish hidden>Finish review</button>
-        <button class="button" type="button" data-theme-toggle>Toggle theme</button>
-      </div>
+      <button class="button" type="button" data-theme-toggle>Toggle theme</button>
     </div>
     <h1>{{ project_name }}</h1>
-    <p class="subtitle">Generated {{ generated }} from {{ project_root }}</p>
+    <p class="subtitle">Generated {{ generated }} from {{ project_root }}. {{ overview.outdated }} outdated: {{ overview.decide }} decide, {{ overview.migrate }} migrate, {{ overview.hold }} hold, {{ overview.upgrade }} upgrade.</p>
   </header>
-  <main class="shell" data-report-id="{{ report_id }}">
-    <div class="hud">
-      <div class="hud-row">
-        <span class="progress"><b data-decided>0</b> of {{ overview.outdated }} decided <small data-summary></small></span>
-        <div class="bar"><span data-bar></span></div>
-        <span class="save-status" data-save-status></span>
-      </div>
-      <div class="hud-row">
-        <div class="chips" data-filter-group="action">
-          <span class="label">Show</span>
-          <button type="button" class="chip active" data-filter="all">All <b>{{ overview.outdated }}</b></button>
-          <button type="button" class="chip" data-filter="decide">Decide <b>{{ overview.decide }}</b></button>
-          <button type="button" class="chip" data-filter="migrate">Migrate <b>{{ overview.migrate }}</b></button>
-          <button type="button" class="chip" data-filter="hold">Hold <b>{{ overview.hold }}</b></button>
-          <button type="button" class="chip" data-filter="upgrade">Upgrade <b>{{ overview.upgrade }}</b></button>
-        </div>
-        <div class="chips" data-filter-group="decision">
-          <span class="label">Decision</span>
-          <button type="button" class="chip active" data-filter="all">Any</button>
-          <button type="button" class="chip" data-filter="">Undecided</button>
-          <button type="button" class="chip" data-filter="upgrade">Upgrade</button>
-          <button type="button" class="chip" data-filter="skip">Skip</button>
-          <button type="button" class="chip" data-filter="defer">Defer</button>
-        </div>
-        <span class="keys js-only" hidden><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>u</kbd> upgrade · <kbd>s</kbd> skip · <kbd>d</kbd> defer · <kbd>o</kbd> details · <kbd>n</kbd> note</span>
-      </div>
+  <main class="shell">
+    <div class="bar server-only" hidden>
+      <span class="progress"><b data-decided>0</b> of {{ overview.outdated }} decided</span>
+      <span class="status" data-status></span>
+      <button class="button primary" type="button" data-finish>Finish review</button>
     </div>
 
     {% set blockers = [] %}
@@ -359,19 +294,19 @@ dialog textarea { width: 100%; min-height: 50vh; margin: 12px 0; padding: 10px; 
     {% for fragment in fragments %}
       {% for batch in fragment.batches %}
       {% set batch_number.value = batch_number.value + 1 %}
-      <section class="section" data-section>
+      <section>
         <h2>Batch {{ batch_number.value }}: {{ batch.name }}<span class="tag">{{ fragment.label }}</span></h2>
         <p class="section-lead">{{ batch.reason }}</p>
-        {% for entry in batch.entries %}{{ item(entry, fragment) }}{% endfor %}
+        {% for entry in batch.entries %}{{ item(entry) }}{% endfor %}
       </section>
       {% endfor %}
     {% endfor %}
 
     {% for fragment in fragments %}
-    <section class="section" data-section>
+    <section>
       <h2>{{ fragment.label }}<span class="tag">{{ fragment.manager }} · {{ fragment.remaining|length }} of {{ fragment.entries|length }} outside batches</span></h2>
       {% for entry in fragment.remaining %}
-        {{ item(entry, fragment) }}
+        {{ item(entry) }}
       {% else %}
         {% if not fragment.entries and not fragment.errors %}
         <div class="empty"><strong>Current</strong><span>No outdated direct dependencies found.</span></div>
@@ -389,34 +324,13 @@ dialog textarea { width: 100%; min-height: 50vh; margin: 12px 0; padding: 10px; 
     </details>
     {% endfor %}
   </main>
-  <footer class="shell">Read-only report. No manifests, lockfiles, dependencies, or workflows were changed. Decisions made here are saved for the executing agent; they change nothing in the project.</footer>
-  <div class="toast" data-toast hidden></div>
-  <dialog data-plan-dialog>
-    <p><strong>Copy the plan</strong> and paste it to Claude or Codex.</p>
-    <textarea readonly></textarea>
-    <button class="button" type="button" data-close-dialog>Close</button>
-  </dialog>
+  <footer class="shell">Read-only report. No manifests, lockfiles, dependencies, or workflows were changed.</footer>
   <script id="plan-data" type="application/json">{{ plan|tojson }}</script>
   <script>
-const plan = JSON.parse(document.getElementById('plan-data').textContent);
-const main = document.querySelector('main');
-const items = [...document.querySelectorAll('.item')];
-const byId = new Map(items.map(item => [item.dataset.id, item]));
-const serverMode = location.protocol === 'http:' || location.protocol === 'https:';
-const storageKey = `deps-review:${plan.report_id}`;
-const state = { report_id: plan.report_id, decisions: {} };
-let serverAvailable = false;
-let serverStateFile = 'the review server';
-let saveTimer = null;
-let finished = false;
-
-document.querySelectorAll('.js-only').forEach(node => { node.hidden = false; });
-
 const themeToggle = document.querySelector('[data-theme-toggle]');
 function syncThemeToggle() {
   const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
   themeToggle.textContent = `${nextTheme[0].toUpperCase()}${nextTheme.slice(1)} mode`;
-  themeToggle.setAttribute('aria-label', `Switch to ${nextTheme} mode`);
 }
 themeToggle.addEventListener('click', () => {
   const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
@@ -431,373 +345,75 @@ reportTheme.media.addEventListener('change', event => {
 });
 syncThemeToggle();
 
-const toast = document.querySelector('[data-toast]');
-let toastTimer = null;
-function showToast(message, sticky = false) {
-  toast.textContent = message;
-  toast.hidden = false;
-  clearTimeout(toastTimer);
-  if (!sticky) toastTimer = setTimeout(() => { toast.hidden = true; }, 3200);
-}
-
-function setSaveStatus(text) {
-  document.querySelector('[data-save-status]').textContent = text;
-}
-
-function readLocal() {
-  try {
-    const raw = localStorage.getItem(storageKey);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed && parsed.report_id === plan.report_id && parsed.decisions ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeLocal() {
-  try {
-    localStorage.setItem(storageKey, JSON.stringify(state));
-  } catch {
-    return;
-  }
-}
-
-async function readServer() {
-  const response = await fetch('/api/state', { cache: 'no-store' });
-  if (!response.ok) throw new Error(`state ${response.status}`);
-  const parsed = await response.json();
-  if (parsed && parsed.state_file) serverStateFile = parsed.state_file;
-  return parsed && parsed.report_id === plan.report_id && parsed.decisions ? parsed : { report_id: plan.report_id, decisions: {} };
-}
-
-async function writeServer() {
-  const response = await fetch('/api/state', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(state),
-  });
-  if (!response.ok) throw new Error(`save ${response.status}`);
-}
-
-function persist() {
-  writeLocal();
-  if (!serverAvailable) {
-    setSaveStatus('Saved in this browser');
-    return;
-  }
-  setSaveStatus('Saving…');
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    writeServer()
-      .then(() => setSaveStatus(`Saved to ${serverStateFile}`))
-      .catch(() => setSaveStatus('Server unavailable, saved in this browser only'));
-  }, 250);
-}
-
-function decisionOf(id) {
-  return state.decisions[id] || { decision: '', note: '' };
-}
-
-function setDecision(id, decision) {
-  const current = decisionOf(id);
-  const next = current.decision === decision ? '' : decision;
-  state.decisions[id] = { decision: next, note: current.note };
-  if (!next && !current.note) delete state.decisions[id];
-  renderItem(id);
-  renderProgress();
-  applyFilters();
-  persist();
-}
-
-function setNote(id, note) {
-  const current = decisionOf(id);
-  state.decisions[id] = { decision: current.decision, note };
-  if (!current.decision && !note.trim()) delete state.decisions[id];
-  renderItem(id, false);
-  persist();
-}
-
-function renderItem(id, syncNote = true) {
-  const item = byId.get(id);
-  const entry = decisionOf(id);
-  item.dataset.decision = entry.decision;
-  item.querySelectorAll('.choice').forEach(button => {
-    button.classList.toggle('active', button.dataset.decide === entry.decision);
-    button.setAttribute('aria-pressed', String(button.dataset.decide === entry.decision));
-  });
-  item.querySelector('.note-flag').hidden = !entry.note.trim();
-  if (syncNote) item.querySelector('.note').value = entry.note;
-}
-
-function renderProgress() {
-  const counts = { upgrade: 0, skip: 0, defer: 0 };
-  for (const item of items) {
-    const decision = decisionOf(item.dataset.id).decision;
-    if (decision) counts[decision] += 1;
-  }
-  const decided = counts.upgrade + counts.skip + counts.defer;
-  document.querySelector('[data-decided]').textContent = String(decided);
-  document.querySelector('[data-summary]').textContent = decided
-    ? `(${counts.upgrade} upgrade, ${counts.skip} skip, ${counts.defer} defer)`
-    : '';
-  document.querySelector('[data-bar]').style.width = `${items.length ? (decided / items.length) * 100 : 0}%`;
-}
-
-const filters = { action: 'all', decision: 'all' };
-function applyFilters() {
-  for (const item of items) {
-    const decision = decisionOf(item.dataset.id).decision;
-    const actionMatch = filters.action === 'all' || item.dataset.action === filters.action;
-    const decisionMatch = filters.decision === 'all' || decision === filters.decision;
-    item.hidden = !(actionMatch && decisionMatch);
-  }
-  document.querySelectorAll('[data-section]').forEach(section => {
-    const rows = [...section.querySelectorAll('.item')];
-    section.hidden = rows.length > 0 && rows.every(row => row.hidden);
-  });
-}
-
-document.querySelectorAll('[data-filter-group]').forEach(group => {
-  const name = group.dataset.filterGroup;
-  const chips = [...group.querySelectorAll('.chip')];
-  chips.forEach(chip => chip.addEventListener('click', () => {
-    filters[name] = chip.dataset.filter;
-    chips.forEach(other => other.classList.toggle('active', other === chip));
-    applyFilters();
-  }));
+window.addEventListener('beforeprint', () => {
+  document.querySelectorAll('details').forEach(details => { details.open = true; });
 });
 
-function toggleDetails(item, open) {
-  const button = item.querySelector('.more');
-  const details = item.querySelector('.details');
-  const next = open === undefined ? details.hidden : open;
-  details.hidden = !next;
-  button.setAttribute('aria-expanded', String(next));
+const items = [...document.querySelectorAll('.item')];
+const status = document.querySelector('[data-status]');
+let decisions = {};
+let saving = Promise.resolve();
+
+function decisionOf(id) {
+  return decisions[id] || { decision: '', note: '' };
+}
+
+function render() {
+  for (const item of items) {
+    const { decision, note } = decisionOf(item.dataset.id);
+    item.dataset.decision = decision;
+    item.querySelectorAll('.choice').forEach(button => {
+      button.classList.toggle('active', button.dataset.decide === decision);
+      button.setAttribute('aria-pressed', String(button.dataset.decide === decision));
+    });
+    item.querySelector('.note').value = note;
+  }
+  document.querySelector('[data-decided]').textContent = items.filter(item => item.dataset.decision).length;
+}
+
+function update(id, change) {
+  decisions[id] = { ...decisionOf(id), ...change };
+  render();
+  const body = JSON.stringify(decisions);
+  saving = saving
+    .then(() => fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body }))
+    .then(response => { status.textContent = response.ok ? 'Saved' : `Not saved: ${response.status}`; })
+    .catch(() => { status.textContent = 'Not saved: the review server has stopped'; });
 }
 
 for (const item of items) {
   const id = item.dataset.id;
-  item.querySelectorAll('.choice').forEach(button => {
-    button.addEventListener('click', event => {
-      event.stopPropagation();
-      setDecision(id, button.dataset.decide);
-    });
-  });
-  item.querySelector('.more').addEventListener('click', event => {
-    event.stopPropagation();
-    toggleDetails(item);
-  });
-  item.querySelector('.note').addEventListener('input', event => setNote(id, event.target.value));
+  item.querySelectorAll('.choice').forEach(button => button.addEventListener('click', () => {
+    update(id, { decision: decisionOf(id).decision === button.dataset.decide ? '' : button.dataset.decide });
+  }));
+  item.querySelector('.note').addEventListener('change', event => update(id, { note: event.target.value }));
 }
 
-function visibleItems() {
-  return items.filter(item => !item.hidden);
-}
-
-function focusedItem() {
-  const active = document.activeElement;
-  return active ? active.closest('.item') : null;
-}
-
-function moveFocus(direction) {
-  const visible = visibleItems();
-  if (!visible.length) return;
-  const current = focusedItem();
-  const index = current ? visible.indexOf(current) : -1;
-  const next = visible[Math.min(visible.length - 1, Math.max(0, index + direction))] || visible[0];
-  next.focus({ preventScroll: true });
-  next.scrollIntoView({ block: 'center', behavior: 'smooth' });
-}
-
-document.addEventListener('keydown', event => {
-  const target = event.target;
-  const typing = target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement;
-  if (typing) {
-    if (event.key === 'Escape') target.closest('.item')?.focus();
-    return;
-  }
-  if (event.metaKey || event.ctrlKey || event.altKey) return;
-  const item = focusedItem();
-  switch (event.key) {
-    case 'j': event.preventDefault(); moveFocus(1); break;
-    case 'k': event.preventDefault(); moveFocus(-1); break;
-    case 'u': if (item) setDecision(item.dataset.id, 'upgrade'); break;
-    case 's': if (item) setDecision(item.dataset.id, 'skip'); break;
-    case 'd': if (item) setDecision(item.dataset.id, 'defer'); break;
-    case 'o': case 'Enter': if (item) { event.preventDefault(); toggleDetails(item); } break;
-    case 'n': if (item) { event.preventDefault(); toggleDetails(item, true); item.querySelector('.note').focus(); } break;
-    default: return;
-  }
-});
-
-function describe(id) {
-  const entry = plan.items[id];
-  return `${entry.name} ${entry.current} -> ${entry.target}`;
-}
-
-function itemBlock(id, decided) {
-  const entry = plan.items[id];
-  const note = decisionOf(id).note.trim();
-  const lines = [`- ${decided ? '[ ] ' : ''}${describe(id)} (${entry.action}, ${entry.surface_label})`];
-  if (note) lines.push(`  - Note: ${note}`);
-  if (decided) {
-    if (entry.steps.length) {
-      lines.push('  - Steps:');
-      entry.steps.forEach((step, index) => lines.push(`    ${index + 1}. ${step}`));
-    }
-    if (entry.verify.length) {
-      lines.push('  - Verify:');
-      entry.verify.forEach(check => lines.push(`    - ${check}`));
-    }
-    if (entry.changelog_url) lines.push(`  - Release notes: ${entry.changelog_url}`);
-  }
-  return lines.join('\n');
-}
-
-function buildMarkdown() {
-  const counts = { upgrade: [], skip: [], defer: [], undecided: [] };
-  for (const item of items) {
-    const decision = decisionOf(item.dataset.id).decision;
-    counts[decision || 'undecided'].push(item.dataset.id);
-  }
-  const out = [];
-  out.push(`# Dependency upgrade plan: ${plan.project_name}`);
-  out.push('');
-  out.push(`Source: DEPS_UPGRADE_REPORT.html generated ${plan.generated} for ${plan.project_root}.`);
-  out.push(`Decisions: ${counts.upgrade.length} upgrade, ${counts.skip.length} skip, ${counts.defer.length} defer, ${counts.undecided.length} undecided.`);
-  out.push('');
-  out.push('## Instructions for the executing agent');
-  out.push('');
-  out.push('- Apply the batches in order, then the remaining items. Finish a batch before starting the next.');
-  out.push('- Run each item\'s verification before moving on. Stop and report at the first failure.');
-  out.push('- Commands were proposed by the report, not executed. Check them against the project\'s own tooling first.');
-  out.push('- Use the project\'s package manager for manifests and lockfiles; do not hand-edit lockfiles.');
-  out.push('- Leave skipped, deferred, and undecided packages untouched.');
-  for (const batch of plan.batches) {
-    const go = batch.ids.filter(id => decisionOf(id).decision === 'upgrade');
-    const held = batch.ids.filter(id => decisionOf(id).decision !== 'upgrade');
-    if (!go.length) continue;
-    out.push('');
-    out.push(`## Batch ${batch.number}: ${batch.name} (${batch.surface_label})`);
-    out.push('');
-    out.push(`Reason: ${batch.reason}`);
-    if (held.length) out.push(`Not in this run: ${held.map(id => `${plan.items[id].name} (${decisionOf(id).decision || 'undecided'})`).join(', ')}.`);
-    out.push('');
-    go.forEach(id => out.push(itemBlock(id, true)));
-  }
-  for (const section of plan.sections) {
-    const go = section.ids.filter(id => decisionOf(id).decision === 'upgrade');
-    if (!go.length) continue;
-    out.push('');
-    out.push(`## ${section.label}`);
-    out.push('');
-    go.forEach(id => out.push(itemBlock(id, true)));
-  }
-  for (const [key, title] of [['skip', 'Skipped'], ['defer', 'Deferred'], ['undecided', 'Undecided']]) {
-    if (!counts[key].length) continue;
-    out.push('');
-    out.push(`## ${title}`);
-    out.push('');
-    counts[key].forEach(id => out.push(itemBlock(id, false)));
-  }
-  out.push('');
-  return out.join('\n');
-}
-
-const dialog = document.querySelector('[data-plan-dialog]');
-dialog.querySelector('[data-close-dialog]').addEventListener('click', () => dialog.close());
-
-async function copyPlan() {
-  const markdown = buildMarkdown();
+document.querySelector('[data-finish]').addEventListener('click', async event => {
+  await saving;
   try {
-    await navigator.clipboard.writeText(markdown);
-    showToast('Plan copied to the clipboard');
-  } catch {
-    dialog.querySelector('textarea').value = markdown;
-    dialog.showModal();
-    dialog.querySelector('textarea').select();
-  }
-}
-
-function exportPlan() {
-  const markdown = buildMarkdown();
-  const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = 'DEPS_UPGRADE_PLAN.md';
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  showToast('DEPS_UPGRADE_PLAN.md downloaded');
-}
-
-async function finishReview() {
-  if (finished) return;
-  const markdown = buildMarkdown();
-  try {
-    const response = await fetch('/api/finish', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ report_id: plan.report_id, markdown }),
-    });
-    if (!response.ok) throw new Error(`finish ${response.status}`);
+    const response = await fetch('/api/finish', { method: 'POST' });
+    if (!response.ok) throw new Error(String(response.status));
     const result = await response.json();
-    finished = true;
-    document.querySelector('[data-finish]').disabled = true;
-    setSaveStatus('Review finished');
-    showToast(`Plan written to ${result.plan}. The review server has stopped; you can close this tab.`, true);
+    event.target.disabled = true;
+    status.textContent = `Plan written to ${result.plan}. The review server has stopped; you can close this tab.`;
   } catch {
-    showToast('Could not reach the review server. Use Copy plan or Export plan instead.');
+    status.textContent = 'Could not reach the review server.';
   }
+});
+
+async function connect() {
+  if (location.protocol !== 'http:') return;
+  const response = await fetch('/api/state', { cache: 'no-store' });
+  if (!response.ok) return;
+  const state = await response.json();
+  decisions = state.decisions;
+  status.textContent = `Saving to ${state.state_file}`;
+  document.querySelectorAll('.server-only').forEach(node => { node.hidden = false; });
+  render();
 }
 
-document.querySelector('[data-copy]').addEventListener('click', copyPlan);
-document.querySelector('[data-export]').addEventListener('click', exportPlan);
-document.querySelector('[data-finish]').addEventListener('click', finishReview);
-
-async function restore() {
-  let saved = readLocal();
-  if (serverMode) {
-    try {
-      const remote = await readServer();
-      serverAvailable = true;
-      document.querySelector('[data-finish]').hidden = false;
-      if (Object.keys(remote.decisions).length || !saved) saved = remote;
-      setSaveStatus(`Saving to ${serverStateFile}`);
-    } catch {
-      setSaveStatus('Saved in this browser');
-    }
-  } else {
-    setSaveStatus('Saved in this browser');
-  }
-  if (saved) state.decisions = saved.decisions;
-  items.forEach(item => renderItem(item.dataset.id));
-  renderProgress();
-  applyFilters();
-  if (serverAvailable && saved && saved !== readLocal()) writeLocal();
-}
-
-restore();
-
-window.addEventListener('beforeprint', () => {
-  document.querySelectorAll('.details').forEach(details => { details.dataset.hiddenBeforePrint = String(details.hidden); details.hidden = false; });
-  document.querySelectorAll('.notes').forEach(notes => { notes.dataset.openBeforePrint = String(notes.open); notes.open = true; });
-});
-
-window.addEventListener('afterprint', () => {
-  document.querySelectorAll('.details').forEach(details => { details.hidden = details.dataset.hiddenBeforePrint === 'true'; delete details.dataset.hiddenBeforePrint; });
-  document.querySelectorAll('.notes').forEach(notes => { notes.open = notes.dataset.openBeforePrint === 'true'; delete notes.dataset.openBeforePrint; });
-});
-
-window.addEventListener('beforeunload', event => {
-  if (serverAvailable || finished) return;
-  const decided = Object.values(state.decisions).some(entry => entry.decision || entry.note.trim());
-  if (!decided) return;
-  event.preventDefault();
-  event.returnValue = '';
-});
+connect().catch(() => {});
   </script>
 </body>
 </html>

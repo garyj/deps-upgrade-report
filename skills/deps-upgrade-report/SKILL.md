@@ -1,11 +1,11 @@
 ---
 name: deps-upgrade-report
-description: Generate one self-contained HTML dependency upgrade plan for uv/Python, npm or pnpm/Node, and pinned GitHub Actions, then collect per-package upgrade, skip, or defer decisions for an agent to execute. Use for outdated dependency checks, upgrade planning, changelog research, breaking-change assessment, or dependency audit reports. The workflow is read-only and does not update dependency files, lockfiles, or workflows.
+description: Generate one self-contained HTML dependency upgrade plan for uv/Python, npm or pnpm/Node, and pinned GitHub Actions, and optionally collect per-package upgrade, skip, or defer decisions for an agent to execute. Use for outdated dependency checks, upgrade planning, changelog research, breaking-change assessment, or dependency audit reports. The workflow is read-only and does not update dependency files, lockfiles, or workflows.
 ---
 
 # Dependency upgrade report
 
-Produce one HTML upgrade plan from normalized JSON fragments, then let the user decide per package. Detect the project's supported dependency types, research each detected type, assess its effect on the actual codebase, render the fragments into one file, and collect decisions as a Markdown plan another agent can execute.
+Produce one HTML upgrade plan from normalized JSON fragments. Detect the project's supported dependency types, research each detected type, assess its effect on the actual codebase, and render the fragments into one file. When the user wants to decide per package, serve the report and collect the decisions as a Markdown plan another agent can execute.
 
 ## Invariants
 
@@ -67,7 +67,7 @@ uv run --script <skill_dir>/scripts/render-report.py \
 
 The PEP 723 renderer installs its locked Jinja2 dependency through uv, validates the fragments, and produces one self-contained HTML file. If validation reports a field over its word limit, fix that field in the fragment and render again; do not relax the limit.
 
-The page lists blockers first, then batches in order, then the remaining packages per dependency type, with research notes collapsed at the end. Every package row has Upgrade, Skip, and Defer buttons and a note field. It works from a `file://` URL, keeps decisions in the browser, and can copy or download the plan as Markdown.
+The page lists blockers first, then batches in order, then the remaining packages per dependency type, with research notes collapsed at the end. Every package row shows its summary and release notes link; changes, steps, and evidence sit behind an expander. Opened from a `file://` URL it is a read-only report.
 
 ## Step 5: collect decisions
 
@@ -78,16 +78,16 @@ uv run --script <skill_dir>/scripts/review-report.py \
   --report <output_dir>/DEPS_UPGRADE_REPORT.html
 ```
 
-It serves the report on `127.0.0.1`, opens a browser, saves every decision to `<output_dir>/DEPS_UPGRADE_PLAN.json` as it happens, and waits. Finish review in the page writes `<output_dir>/DEPS_UPGRADE_PLAN.md`, prints the same Markdown to stdout, and stops the server. Stopping it early keeps the decisions; running it again resumes them.
+It serves the report on `127.0.0.1`, opens a browser, and adds Upgrade, Skip, and Defer buttons and a note field to every row. Every decision is saved to `<output_dir>/DEPS_UPGRADE_PLAN.json` as it happens. Finish review in the page writes `<output_dir>/DEPS_UPGRADE_PLAN.md`, prints the same Markdown to stdout, and stops the server. Stopping it early keeps the decisions; running it again resumes them. The PEP 723 script installs FastAPI and uvicorn through uv.
 
-When the shell has a time limit, run it in the background and read `DEPS_UPGRADE_PLAN.md` once it exists. When the user only wants the report, skip this step and tell them the page's Copy plan and Export plan buttons produce the same file.
+When the shell has a time limit, run it in the background and read `DEPS_UPGRADE_PLAN.md` once it exists. When the user only wants the report, skip this step; they can hand the report itself to an agent.
 
 The plan is the hand-off for the upgrade work. Executing it is a separate task; this skill changes nothing in the project.
 
 ## Step 6: verify and return
 
 - Confirm the HTML exists and is non-empty.
-- Open it in a browser and check the blockers, the first batch, and one expanded package at desktop and narrow widths.
+- Open it in a browser and check the blockers, the first batch, one release notes link, and one expanded package at desktop and narrow widths.
 - Confirm external links use `https://` and no local project content is embedded beyond the report evidence.
 - Confirm `git status --short` for `project_root` is unchanged except for an explicitly approved output path.
 

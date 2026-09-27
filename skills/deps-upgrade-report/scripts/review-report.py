@@ -1,45 +1,65 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = [
+#   "fastapi>=0.115,<1",
+#   "uvicorn>=0.30,<1",
+# ]
 # ///
-from __future__ import annotations
-
 import argparse
 import json
 import os
+import re
+import socket
 import sys
 import tempfile
 import threading
 import webbrowser
-from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal
+
+import uvicorn
+from fastapi import FastAPI, HTTPException, Response
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, ValidationError
 
 
 STATE_NAME = 'DEPS_UPGRADE_PLAN.json'
 PLAN_NAME = 'DEPS_UPGRADE_PLAN.md'
-DECISIONS = {'', 'upgrade', 'skip', 'defer'}
-MAX_BODY_BYTES = 4 * 1024 * 1024
+PLAN_DATA = re.compile(r'<script id="plan-data" type="application/json">(.*?)</script>', re.DOTALL)
+INSTRUCTIONS = [
+    'Apply the batches in order, then the remaining items. Finish a batch before starting the next.',
+    "Run each item's verification before moving on. Stop and report at the first failure.",
+    "Commands were proposed by the report, not executed. Check them against the project's own tooling first.",
+    "Use the project's package manager for manifests and lockfiles; do not hand-edit lockfiles.",
+    'Leave skipped, deferred, and undecided packages untouched.',
+]
 
 
-class StateError(ValueError):
-    pass
+class Decision(BaseModel):
+    decision: Literal['', 'upgrade', 'skip', 'defer'] = ''
+    note: str = ''
 
 
-class ReviewServer(ThreadingHTTPServer):
-    def __init__(self, address: tuple[str, int], report: Path, output_dir: Path) -> None:
-        super().__init__(address, ReviewHandler)
-        self.report = report
-        self.state_path = output_dir / STATE_NAME
-        self.plan_path = output_dir / PLAN_NAME
-        self.finished = False
-        self.write_lock = threading.Lock()
+class State(BaseModel):
+    report_id: str
+    decisions: dict[str, Decision]
 
 
-def build_server(report: Path, output_dir: Path, port: int = 0) -> ReviewServer:
-    return ReviewServer(('127.0.0.1', port), report.resolve(), output_dir.resolve())
+def read_plan(report: Path) -> dict[str, Any]:
+    match = PLAN_DATA.search(report.read_text(encoding='utf-8'))
+    if match is None:
+        raise ValueError(f'{report} has no plan data; render it with render-report.py')
+    return json.loads(match.group(1))
+
+
+def read_state(path: Path, report_id: str) -> State:
+    try:
+        state = State.model_validate_json(path.read_text(encoding='utf-8'))
+    except (OSError, ValidationError):
+        return State(report_id=report_id, decisions={})
+    return state if state.report_id == report_id else State(report_id=report_id, decisions={})
 
 
 def write_atomic(path: Path, content: str) -> None:
@@ -54,133 +74,106 @@ def write_atomic(path: Path, content: str) -> None:
         raise
 
 
-def validate_state(value: object) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise StateError('state must be an object')
-    raw = cast(dict[object, object], value)
-    report_id = raw.get('report_id')
-    if not isinstance(report_id, str) or not report_id:
-        raise StateError('state.report_id must be a string')
-    decisions = raw.get('decisions')
-    if not isinstance(decisions, dict):
-        raise StateError('state.decisions must be an object')
-    clean: dict[str, dict[str, str]] = {}
-    for key, entry in cast(dict[object, object], decisions).items():
-        if not isinstance(key, str) or not isinstance(entry, dict):
-            raise StateError('state.decisions entries must be objects keyed by item id')
-        item = cast(dict[object, object], entry)
-        decision = item.get('decision', '')
-        note = item.get('note', '')
-        if decision not in DECISIONS or not isinstance(decision, str):
-            raise StateError(f'state.decisions[{key}].decision is not supported')
-        if not isinstance(note, str):
-            raise StateError(f'state.decisions[{key}].note must be a string')
-        clean[key] = {'decision': decision, 'note': note}
-    return {'report_id': report_id, 'decisions': clean}
+def build_markdown(plan: dict[str, Any], state: State) -> str:
+    items: dict[str, dict[str, Any]] = plan['items']
+
+    def decision(item_id: str) -> Decision:
+        return state.decisions.get(item_id, Decision())
+
+    def block(item_id: str, accepted: bool) -> list[str]:
+        item = items[item_id]
+        heading = f'{item["name"]} {item["current"]} -> {item["target"]} ({item["action"]}, {item["surface_label"]})'
+        lines = [f'- [ ] {heading}' if accepted else f'- {heading}']
+        if note := decision(item_id).note.strip():
+            lines.append(f'  - Note: {note}')
+        if accepted:
+            if item['steps']:
+                lines.append('  - Steps:')
+                lines += [f'    {number}. {step}' for number, step in enumerate(item['steps'], 1)]
+            if item['verify']:
+                lines.append('  - Verify:')
+                lines += [f'    - {check}' for check in item['verify']]
+            if item['changelog_url']:
+                lines.append(f'  - Release notes: {item["changelog_url"]}')
+        return lines
+
+    by_decision: dict[str, list[str]] = {'upgrade': [], 'skip': [], 'defer': [], '': []}
+    for item_id in items:
+        by_decision[decision(item_id).decision].append(item_id)
+
+    out = [
+        f'# Dependency upgrade plan: {plan["project_name"]}',
+        '',
+        f'Source: DEPS_UPGRADE_REPORT.html generated {plan["generated"]} for {plan["project_root"]}.',
+        f'Decisions: {len(by_decision["upgrade"])} upgrade, {len(by_decision["skip"])} skip, '
+        f'{len(by_decision["defer"])} defer, {len(by_decision[""])} undecided.',
+        '',
+        '## Instructions for the executing agent',
+        '',
+        *[f'- {line}' for line in INSTRUCTIONS],
+    ]
+    for batch in plan['batches']:
+        accepted = [item_id for item_id in batch['ids'] if decision(item_id).decision == 'upgrade']
+        if not accepted:
+            continue
+        out += ['', f'## Batch {batch["number"]}: {batch["name"]} ({batch["surface_label"]})', '', f'Reason: {batch["reason"]}']
+        if held := [item_id for item_id in batch['ids'] if item_id not in accepted]:
+            names = ', '.join(f'{items[item_id]["name"]} ({decision(item_id).decision or "undecided"})' for item_id in held)
+            out.append(f'Not in this run: {names}.')
+        out.append('')
+        for item_id in accepted:
+            out += block(item_id, True)
+    for section in plan['sections']:
+        accepted = [item_id for item_id in section['ids'] if decision(item_id).decision == 'upgrade']
+        if accepted:
+            out += ['', f'## {section["label"]}', '']
+            for item_id in accepted:
+                out += block(item_id, True)
+    for key, title in (('skip', 'Skipped'), ('defer', 'Deferred'), ('', 'Undecided')):
+        if by_decision[key]:
+            out += ['', f'## {title}', '']
+            for item_id in by_decision[key]:
+                out += block(item_id, False)
+    return '\n'.join(out) + '\n'
 
 
-def read_state(path: Path) -> dict[str, Any]:
-    try:
-        return validate_state(json.loads(path.read_text(encoding='utf-8')))
-    except (OSError, ValueError):
-        return {'report_id': None, 'decisions': {}}
+def create_app(report: Path, output_dir: Path, on_finish: Callable[[], None]) -> FastAPI:
+    plan = read_plan(report)
+    state_path = output_dir / STATE_NAME
+    plan_path = output_dir / PLAN_NAME
+    lock = threading.Lock()
+    app = FastAPI(openapi_url=None)
 
+    def page() -> str:
+        return report.read_text(encoding='utf-8')
 
-class ReviewHandler(BaseHTTPRequestHandler):
-    @property
-    def review(self) -> ReviewServer:
-        return cast(ReviewServer, self.server)
+    def get_state() -> dict[str, Any]:
+        state = read_state(state_path, plan['report_id'])
+        return {'decisions': state.model_dump()['decisions'], 'state_file': str(state_path)}
 
-    def log_message(self, format: str, *args: Any) -> None:
-        return
+    def put_state(decisions: dict[str, Decision]) -> Response:
+        unknown = sorted(set(decisions) - set(plan['items']))
+        if unknown:
+            raise HTTPException(400, f'unknown item ids: {", ".join(unknown)}')
+        with lock:
+            state = State(report_id=plan['report_id'], decisions=decisions)
+            write_atomic(state_path, state.model_dump_json(indent=2) + '\n')
+        return Response(status_code=204)
 
-    def send_json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
-        body = json.dumps(payload).encode('utf-8')
-        self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Cache-Control', 'no-store')
-        self.send_header('Content-Length', str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def send_error_json(self, status: HTTPStatus, message: str) -> None:
-        self.send_json(status, {'error': message})
-
-    def read_json_body(self) -> object:
-        length = int(self.headers.get('Content-Length', '0'))
-        if length <= 0:
-            raise StateError('request body is empty')
-        if length > MAX_BODY_BYTES:
-            raise StateError('request body is too large')
-        try:
-            return json.loads(self.rfile.read(length).decode('utf-8'))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise StateError(f'request body is not JSON: {exc}') from exc
-
-    def do_GET(self) -> None:
-        review = self.review
-        if self.path in ('/', '/index.html', f'/{review.report.name}'):
-            try:
-                body = review.report.read_bytes()
-            except OSError as exc:
-                self.send_error_json(HTTPStatus.NOT_FOUND, f'cannot read report: {exc}')
-                return
-            self.send_response(HTTPStatus.OK)
-            self.send_header('Content-Type', 'text/html; charset=utf-8')
-            self.send_header('Cache-Control', 'no-store')
-            self.send_header('Content-Length', str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            return
-        if self.path == '/api/state':
-            state = read_state(review.state_path)
-            state['state_file'] = str(review.state_path)
-            state['plan_file'] = str(review.plan_path)
-            self.send_json(HTTPStatus.OK, state)
-            return
-        self.send_error_json(HTTPStatus.NOT_FOUND, 'not found')
-
-    def do_PUT(self) -> None:
-        review = self.review
-        if self.path != '/api/state':
-            self.send_error_json(HTTPStatus.NOT_FOUND, 'not found')
-            return
-        try:
-            state = validate_state(self.read_json_body())
-        except StateError as exc:
-            self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
-            return
-        with review.write_lock:
-            write_atomic(review.state_path, json.dumps(state, indent=2) + '\n')
-        self.send_response(HTTPStatus.NO_CONTENT)
-        self.send_header('Cache-Control', 'no-store')
-        self.end_headers()
-
-    def do_POST(self) -> None:
-        review = self.review
-        if self.path != '/api/finish':
-            self.send_error_json(HTTPStatus.NOT_FOUND, 'not found')
-            return
-        try:
-            body = self.read_json_body()
-        except StateError as exc:
-            self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
-            return
-        if not isinstance(body, dict):
-            self.send_error_json(HTTPStatus.BAD_REQUEST, 'finish body must be an object')
-            return
-        payload = cast(dict[object, object], body)
-        markdown = payload.get('markdown')
-        if not isinstance(markdown, str) or not markdown.strip():
-            self.send_error_json(HTTPStatus.BAD_REQUEST, 'finish.markdown must be a non-empty string')
-            return
-        with review.write_lock:
-            write_atomic(review.plan_path, markdown)
-            review.finished = True
-        self.send_json(HTTPStatus.OK, {'plan': str(review.plan_path)})
+    def finish() -> dict[str, str]:
+        with lock:
+            markdown = build_markdown(plan, read_state(state_path, plan['report_id']))
+            write_atomic(plan_path, markdown)
         sys.stdout.write(markdown)
         sys.stdout.flush()
-        threading.Thread(target=review.shutdown, daemon=True).start()
+        on_finish()
+        return {'plan': str(plan_path)}
+
+    app.add_api_route('/', page, response_class=HTMLResponse)
+    app.add_api_route('/api/state', get_state)
+    app.add_api_route('/api/state', put_state, methods=['PUT'], status_code=204)
+    app.add_api_route('/api/finish', finish, methods=['POST'])
+    return app
 
 
 def parse_args() -> argparse.Namespace:
@@ -194,25 +187,41 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    report = cast(Path, args.report).resolve()
+    report: Path = args.report.resolve()
     if not report.is_file():
         sys.stderr.write(f'report not found: {report}\n')
         return 2
-    output_dir = cast(Path | None, args.output_dir) or report.parent
-    server = build_server(report, output_dir, cast(int, args.port))
-    url = f'http://127.0.0.1:{server.server_port}/'
+    output_dir: Path = (args.output_dir or report.parent).resolve()
+    finished = threading.Event()
+
+    def stop() -> None:
+        finished.set()
+        server.should_exit = True
+
+    try:
+        app = create_app(report, output_dir, stop)
+    except ValueError as exc:
+        sys.stderr.write(f'{exc}\n')
+        return 2
+    sock = socket.socket()
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(('127.0.0.1', args.port))
+    sock.listen()
+    server = uvicorn.Server(uvicorn.Config(app, log_level='warning'))
+    url = f'http://127.0.0.1:{sock.getsockname()[1]}/'
     sys.stderr.write(f'Review the report at {url}\n')
-    sys.stderr.write(f'Decisions are saved to {server.state_path} as you go. Finish review writes {server.plan_path} and stops this server.\n')
+    sys.stderr.write(f'Decisions are saved to {output_dir / STATE_NAME} as you go. '
+                     f'Finish review writes {output_dir / PLAN_NAME} and stops this server.\n')
     if not args.no_open:
         webbrowser.open(url)
     try:
-        server.serve_forever()
+        server.run(sockets=[sock])
     except KeyboardInterrupt:
-        sys.stderr.write(f'\nStopped before Finish review. Decisions stay in {server.state_path}; run this command again to resume.\n')
-        return 130
-    finally:
-        server.server_close()
-    return 0 if server.finished else 1
+        pass
+    if finished.is_set():
+        return 0
+    sys.stderr.write(f'Stopped before Finish review. Decisions stay in {output_dir / STATE_NAME}; run this command again to resume.\n')
+    return 130
 
 
 if __name__ == '__main__':

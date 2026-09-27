@@ -89,7 +89,8 @@ class RendererTests(unittest.TestCase):
 
             document = self.render(data, project_root=project_root)
 
-            self.assertIn('data-report-id=', document)
+            self.assertIn('<a class="release-link" href="https://example.com/releases"', document)
+            self.assertLess(document.index('class="release-link"'), document.index('<details class="details">'))
             self.assertIn('Batch 1: Core &lt;move&gt;', document)
             self.assertIn('data-decide="upgrade"', document)
             self.assertIn('data-decide="skip"', document)

@@ -93,6 +93,15 @@ The plan is the hand-off for the upgrade work. Executing it is a separate task; 
 
 Return the absolute HTML path, counts per action for each dependency type, the batch names, blockers, any incomplete research, and the plan path when a review ran. Do not present a partial report as complete.
 
+End the reply with the commands to open the report and to review it, filled in with the real paths:
+
+```bash
+xdg-open <output_dir>/DEPS_UPGRADE_REPORT.html
+uv run --script <skill_dir>/scripts/review-report.py --report <output_dir>/DEPS_UPGRADE_REPORT.html
+```
+
+Use `open` instead of `xdg-open` on macOS.
+
 ## Bundled resources
 
 - `references/report-schema.md` defines the worker fragment contract, including the word limits and the action semantics.

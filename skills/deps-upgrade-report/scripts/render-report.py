@@ -299,7 +299,9 @@ def plan_data(
     items: dict[str, dict[str, Any]] = {}
     batches: list[dict[str, Any]] = []
     sections: list[dict[str, Any]] = []
+    blockers: list[str] = []
     for fragment in fragments:
+        blockers += [f'{fragment["label"]}: {blocker}' for blocker in fragment['blockers']]
         for entry in fragment['entries']:
             items[entry['id']] = {
                 'name': entry['name'],
@@ -333,6 +335,7 @@ def plan_data(
         'generated': generated,
         'batches': batches,
         'sections': sections,
+        'blockers': blockers,
         'items': items,
     }
 

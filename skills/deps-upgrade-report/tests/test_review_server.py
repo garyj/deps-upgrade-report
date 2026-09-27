@@ -50,6 +50,7 @@ class ReviewServerTests(unittest.TestCase):
                 entry('black', 'hold'),
             ],
             batches=[{'name': 'Django line', 'packages': ['django', 'django-stubs'], 'reason': 'Stubs track Django.'}],
+            blockers=['Production PostgreSQL version is ❓ unknown.'],
         )
         validated = self.renderer.validate_fragment(data, Path('python.json'), self.output_dir)
         self.report = self.output_dir / 'DEPS_UPGRADE_REPORT.html'
@@ -107,6 +108,7 @@ class ReviewServerTests(unittest.TestCase):
 
         decisions = {
             'python-django': {'decision': 'upgrade', 'note': 'Check the admin first.'},
+            'python-django-stubs': {'decision': 'upgrade', 'note': ''},
             'python-ruff': {'decision': 'upgrade', 'note': ''},
             'python-celery': {'decision': 'defer', 'note': ''},
             'python-black': {'decision': 'skip', 'note': ''},
@@ -128,9 +130,9 @@ class ReviewServerTests(unittest.TestCase):
         self.assertTrue(self.finished.is_set())
         self.assertFalse(self.thread.is_alive())
 
-        self.assertIn('Decisions: 2 upgrade, 1 skip, 1 defer, 1 undecided.', markdown)
+        self.assertIn('Decisions: 3 upgrade, 1 skip, 1 defer, 0 undecided.', markdown)
         batch = markdown.index('## Batch 1: Django line (Python)')
-        self.assertIn('Not in this run: django-stubs (undecided).', markdown)
+        self.assertLess(markdown.index('- Python: Production PostgreSQL version is ❓ unknown.'), batch)
         self.assertLess(batch, markdown.index('- [ ] django 1.0.0 -> 2.0.0 (migrate, Python)'))
         self.assertIn('  - Note: Check the admin first.', markdown)
         self.assertIn('    1. uv lock --upgrade-package example==2.0.0', markdown)
@@ -139,8 +141,21 @@ class ReviewServerTests(unittest.TestCase):
         skipped = markdown.index('## Skipped')
         self.assertLess(skipped, markdown.index('- black 1.0.0 -> 2.0.0 (hold, Python)'))
         self.assertLess(markdown.index('## Deferred'), markdown.index('- celery'))
-        self.assertLess(markdown.index('## Undecided'), markdown.index('- django-stubs'))
-        self.assertEqual(markdown.count('Release notes:'), 2)
+        self.assertNotIn('## Undecided', markdown)
+        self.assertEqual(markdown.count('Release notes:'), 3)
+
+    def test_plan_keeps_partly_accepted_batches_out_of_the_executable_sections(self) -> None:
+        plan = self.module.read_plan(self.report)
+        state = self.module.State(report_id=plan['report_id'], decisions={
+            'python-django': self.module.Decision(decision='upgrade'),
+            'python-django-stubs': self.module.Decision(decision='skip'),
+        })
+
+        markdown = self.module.build_markdown(plan, state)
+
+        self.assertNotIn('- [ ]', markdown)
+        self.assertNotIn('## Batch 1', markdown)
+        self.assertIn('- Batch 1: Django line (Python): django (upgrade), django-stubs (skip)', markdown)
 
     def test_rejects_unknown_items_and_decisions(self) -> None:
         self.start()

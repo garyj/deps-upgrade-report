@@ -24,7 +24,7 @@ The page opens with anything to check before starting, then the batches of packa
 
 `scripts/review-report.py` serves the same page on `127.0.0.1` and adds Upgrade, Skip, and Defer buttons and a note field to every row. It saves every decision to `DEPS_UPGRADE_PLAN.json` as it happens. Finish review in the page writes `DEPS_UPGRADE_PLAN.md`, prints it to stdout, and stops the server. Stopping early keeps the decisions; running the command again resumes them.
 
-The plan lists accepted upgrades by batch with their steps and verification, then the skipped, deferred, and undecided packages, prefaced with instructions for the executing agent.
+The plan opens with instructions for the executing agent and the blockers to check first. It then lists accepted upgrades by batch with their steps and verification, followed by the skipped, deferred, and undecided packages. A batch runs only when every package in it is accepted; otherwise it is listed as incomplete.
 
 ## Requirements
 

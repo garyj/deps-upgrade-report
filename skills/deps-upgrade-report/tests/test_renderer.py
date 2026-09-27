@@ -115,6 +115,7 @@ class RendererTests(unittest.TestCase):
                 project_root,
                 entries=[entry('django'), entry('pytest', 'upgrade'), entry('ruff', 'decide')],
                 batches=[{'name': 'Django line', 'packages': ['django', 'pytest'], 'reason': 'Same release train.'}],
+                blockers=['PostgreSQL version is ❓ unknown.'],
             )
             node = fragment(project_root, 'node', entries=[entry('vite', 'upgrade')])
 
@@ -136,6 +137,7 @@ class RendererTests(unittest.TestCase):
             self.assertEqual(plan['batches'][0]['ids'], ['python-django', 'python-pytest'])
             self.assertEqual([section['ids'] for section in plan['sections']], [['python-ruff'], ['node-vite']])
             self.assertEqual(plan['items']['python-ruff']['action'], 'decide')
+            self.assertEqual(plan['blockers'], ['Python: PostgreSQL version is ❓ unknown.'])
 
     def test_target_defaults_to_latest(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

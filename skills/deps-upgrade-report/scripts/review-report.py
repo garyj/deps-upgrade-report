@@ -33,7 +33,7 @@ INSTRUCTIONS = [
     "Run each item's verification before moving on. Stop and report at the first failure.",
     "Commands were proposed by the report, not executed. Check them against the project's own tooling first.",
     "Use the project's package manager for manifests and lockfiles; do not hand-edit lockfiles.",
-    'Leave skipped, deferred, and undecided packages untouched.',
+    'Leave skipped, deferred, and undecided packages untouched, and every package in an incomplete batch.',
 ]
 
 
@@ -112,15 +112,18 @@ def build_markdown(plan: dict[str, Any], state: State) -> str:
         '',
         *[f'- {line}' for line in INSTRUCTIONS],
     ]
+    if plan['blockers']:
+        out += ['', '## Check before you start', '', 'Confirm each of these first. Stop and report if one blocks an accepted upgrade.', '']
+        out += [f'- {blocker}' for blocker in plan['blockers']]
+    incomplete: list[dict[str, Any]] = []
     for batch in plan['batches']:
         accepted = [item_id for item_id in batch['ids'] if decision(item_id).decision == 'upgrade']
         if not accepted:
             continue
-        out += ['', f'## Batch {batch["number"]}: {batch["name"]} ({batch["surface_label"]})', '', f'Reason: {batch["reason"]}']
-        if held := [item_id for item_id in batch['ids'] if item_id not in accepted]:
-            names = ', '.join(f'{items[item_id]["name"]} ({decision(item_id).decision or "undecided"})' for item_id in held)
-            out.append(f'Not in this run: {names}.')
-        out.append('')
+        if len(accepted) < len(batch['ids']):
+            incomplete.append(batch)
+            continue
+        out += ['', f'## Batch {batch["number"]}: {batch["name"]} ({batch["surface_label"]})', '', f'Reason: {batch["reason"]}', '']
         for item_id in accepted:
             out += block(item_id, True)
     for section in plan['sections']:
@@ -129,6 +132,11 @@ def build_markdown(plan: dict[str, Any], state: State) -> str:
             out += ['', f'## {section["label"]}', '']
             for item_id in accepted:
                 out += block(item_id, True)
+    if incomplete:
+        out += ['', '## Incomplete batches', '', 'Not executed: a batch moves together, and not every package in these was accepted.', '']
+        for batch in incomplete:
+            members = ', '.join(f'{items[item_id]["name"]} ({decision(item_id).decision or "undecided"})' for item_id in batch['ids'])
+            out.append(f'- Batch {batch["number"]}: {batch["name"]} ({batch["surface_label"]}): {members}')
     for key, title in (('skip', 'Skipped'), ('defer', 'Deferred'), ('', 'Undecided')):
         if by_decision[key]:
             out += ['', f'## {title}', '']

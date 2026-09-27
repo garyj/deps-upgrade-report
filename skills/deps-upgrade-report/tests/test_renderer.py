@@ -212,6 +212,13 @@ class RendererTests(unittest.TestCase):
             with self.assertRaisesRegex(self.renderer.FragmentError, 'duplicate entry name django'):
                 self.renderer.validate_fragment(data, Path('python.json'), project_root)
 
+    def test_names_that_slug_alike_get_distinct_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project_root = Path(directory).resolve()
+            data = fragment(project_root, 'node', entries=[entry('foo.bar'), entry('foo-bar')])
+            validated = self.renderer.validate_fragment(data, Path('node.json'), project_root)
+            self.assertEqual(sorted(item['id'] for item in validated['entries']), ['node-foo-bar', 'node-foo-bar-2'])
+
     def test_rejects_duplicate_surfaces(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

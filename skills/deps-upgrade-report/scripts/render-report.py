@@ -203,11 +203,17 @@ def validate_fragment(value: object, source: Path, project_root: Path) -> dict[s
         for index, entry in enumerate(cast(list[object], raw_entries))
     ]
     seen_names: set[str] = set()
+    seen_ids: set[str] = set()
     for entry in entries:
         if entry['name'] in seen_names:
             raise FragmentError(f'{source}: duplicate entry name {entry["name"]}')
         seen_names.add(entry['name'])
-        entry['id'] = slug(f'{surface}-{entry["name"]}')
+        base = entry['id'] = slug(f'{surface}-{entry["name"]}')
+        suffix = 2
+        while entry['id'] in seen_ids:
+            entry['id'] = f'{base}-{suffix}'
+            suffix += 1
+        seen_ids.add(entry['id'])
     entries.sort(key=lambda entry: (ACTION_ORDER[entry['action']], entry['name'].casefold()))
 
     blockers = require_string_list(raw_fragment.get('blockers', []), f'{source}: blockers')

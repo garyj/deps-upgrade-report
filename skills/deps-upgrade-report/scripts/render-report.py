@@ -204,7 +204,7 @@ def validate_fragment(value: object, source: Path, project_root: Path) -> dict[s
     ]
     seen_names: set[str] = set()
     seen_ids: set[str] = set()
-    for entry in entries:
+    for entry in sorted(entries, key=lambda entry: entry['name']):
         if entry['name'] in seen_names:
             raise FragmentError(f'{source}: duplicate entry name {entry["name"]}')
         seen_names.add(entry['name'])
@@ -306,8 +306,10 @@ def plan_data(
     batches: list[dict[str, Any]] = []
     sections: list[dict[str, Any]] = []
     blockers: list[str] = []
+    errors: list[str] = []
     for fragment in fragments:
         blockers += [f'{fragment["label"]}: {blocker}' for blocker in fragment['blockers']]
+        errors += [f'{fragment["label"]}: {error}' for error in fragment['errors']]
         for entry in fragment['entries']:
             items[entry['id']] = {
                 'name': entry['name'],
@@ -321,6 +323,8 @@ def plan_data(
                 'steps': entry['steps'],
                 'verify': entry['verify'],
                 'changelog_url': entry['changelog_url'],
+                'current_ref': entry.get('current_ref'),
+                'latest_ref': entry.get('latest_ref'),
             }
         for batch in fragment['batches']:
             batches.append({
@@ -342,6 +346,7 @@ def plan_data(
         'batches': batches,
         'sections': sections,
         'blockers': blockers,
+        'errors': errors,
         'items': items,
     }
 

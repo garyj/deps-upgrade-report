@@ -43,7 +43,7 @@ class ReviewServerTests(unittest.TestCase):
         data = fragment(
             self.output_dir,
             entries=[
-                entry('django'),
+                entry('django', current_ref='a1b2c3d', latest_ref='v2.0.0'),
                 entry('django-stubs', 'upgrade'),
                 entry('ruff', 'upgrade'),
                 entry('celery', 'decide'),
@@ -51,6 +51,7 @@ class ReviewServerTests(unittest.TestCase):
             ],
             batches=[{'name': 'Django line', 'packages': ['django', 'django-stubs'], 'reason': 'Stubs track Django.'}],
             blockers=['Production PostgreSQL version is ❓ unknown.'],
+            errors=['PyPI metadata for celery timed out.'],
         )
         validated = self.renderer.validate_fragment(data, Path('python.json'), self.output_dir)
         self.report = self.output_dir / 'DEPS_UPGRADE_REPORT.html'
@@ -132,7 +133,11 @@ class ReviewServerTests(unittest.TestCase):
 
         self.assertIn('Decisions: 3 upgrade, 1 skip, 1 defer, 0 undecided.', markdown)
         batch = markdown.index('## Batch 1: Django line (Python)')
-        self.assertLess(markdown.index('- Python: Production PostgreSQL version is ❓ unknown.'), batch)
+        instructions = markdown.index('## Instructions for the executing agent')
+        self.assertLess(markdown.index('- Python: Production PostgreSQL version is ❓ unknown.'), instructions)
+        self.assertLess(markdown.index('- Python: PyPI metadata for celery timed out.'), instructions)
+        self.assertLess(instructions, batch)
+        self.assertIn('  - Refs: a1b2c3d -> v2.0.0', markdown)
         self.assertLess(batch, markdown.index('- [ ] django 1.0.0 -> 2.0.0 (migrate, Python)'))
         self.assertIn('  - Note: Check the admin first.', markdown)
         self.assertIn('    1. uv lock --upgrade-package example==2.0.0', markdown)

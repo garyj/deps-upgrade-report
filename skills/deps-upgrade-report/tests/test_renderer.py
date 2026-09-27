@@ -117,7 +117,7 @@ class RendererTests(unittest.TestCase):
                 batches=[{'name': 'Django line', 'packages': ['django', 'pytest'], 'reason': 'Same release train.'}],
                 blockers=['PostgreSQL version is ❓ unknown.'],
             )
-            node = fragment(project_root, 'node', entries=[entry('vite', 'upgrade')])
+            node = fragment(project_root, 'node', entries=[entry('vite', 'upgrade')], errors=['npm registry timed out.'])
 
             validated = [
                 self.renderer.validate_fragment(node, Path('node.json'), project_root),
@@ -138,6 +138,7 @@ class RendererTests(unittest.TestCase):
             self.assertEqual([section['ids'] for section in plan['sections']], [['python-ruff'], ['node-vite']])
             self.assertEqual(plan['items']['python-ruff']['action'], 'decide')
             self.assertEqual(plan['blockers'], ['Python: PostgreSQL version is ❓ unknown.'])
+            self.assertEqual(plan['errors'], ['Node: npm registry timed out.'])
 
     def test_target_defaults_to_latest(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -215,9 +216,13 @@ class RendererTests(unittest.TestCase):
     def test_names_that_slug_alike_get_distinct_ids(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             project_root = Path(directory).resolve()
-            data = fragment(project_root, 'node', entries=[entry('foo.bar'), entry('foo-bar')])
-            validated = self.renderer.validate_fragment(data, Path('node.json'), project_root)
-            self.assertEqual(sorted(item['id'] for item in validated['entries']), ['node-foo-bar', 'node-foo-bar-2'])
+            ids: list[dict[str, str]] = []
+            for names in (['foo.bar', 'foo-bar'], ['foo-bar', 'foo.bar']):
+                data = fragment(project_root, 'node', entries=[entry(name) for name in names])
+                validated = self.renderer.validate_fragment(data, Path('node.json'), project_root)
+                ids.append({item['name']: item['id'] for item in validated['entries']})
+            self.assertEqual(ids[0], {'foo-bar': 'node-foo-bar', 'foo.bar': 'node-foo-bar-2'})
+            self.assertEqual(ids[0], ids[1])
 
     def test_rejects_duplicate_surfaces(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

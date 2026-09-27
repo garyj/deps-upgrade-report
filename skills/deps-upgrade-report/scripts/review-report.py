@@ -87,6 +87,8 @@ def build_markdown(plan: dict[str, Any], state: State) -> str:
         if note := decision(item_id).note.strip():
             lines.append(f'  - Note: {note}')
         if accepted:
+            if item['current_ref'] or item['latest_ref']:
+                lines.append(f'  - Refs: {item["current_ref"] or "❓ unknown"} -> {item["latest_ref"] or "❓ unknown"}')
             if item['steps']:
                 lines.append('  - Steps:')
                 lines += [f'    {number}. {step}' for number, step in enumerate(item['steps'], 1)]
@@ -107,14 +109,14 @@ def build_markdown(plan: dict[str, Any], state: State) -> str:
         f'Source: DEPS_UPGRADE_REPORT.html generated {plan["generated"]} for {plan["project_root"]}.',
         f'Decisions: {len(by_decision["upgrade"])} upgrade, {len(by_decision["skip"])} skip, '
         f'{len(by_decision["defer"])} defer, {len(by_decision[""])} undecided.',
-        '',
-        '## Instructions for the executing agent',
-        '',
-        *[f'- {line}' for line in INSTRUCTIONS],
     ]
     if plan['blockers']:
         out += ['', '## Check before you start', '', 'Confirm each of these first. Stop and report if one blocks an accepted upgrade.', '']
         out += [f'- {blocker}' for blocker in plan['blockers']]
+    if plan['errors']:
+        out += ['', '## Incomplete research', '', 'The report could not finish this research. Upgrades it affects may carry unreported risk.', '']
+        out += [f'- {error}' for error in plan['errors']]
+    out += ['', '## Instructions for the executing agent', '', *[f'- {line}' for line in INSTRUCTIONS]]
     incomplete: list[dict[str, Any]] = []
     for batch in plan['batches']:
         accepted = [item_id for item_id in batch['ids'] if decision(item_id).decision == 'upgrade']

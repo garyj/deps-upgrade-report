@@ -1,6 +1,6 @@
 # Node workflow
 
-Use the manager reported by `detect-managers.sh`. Read `report-schema.md` before writing the fragment.
+Use the manager reported by `detect-managers.py`. Read `report-schema.md` before writing the fragment.
 
 ## Gather outdated dependencies
 
@@ -37,24 +37,30 @@ Keep only packages declared in `dependencies`, `devDependencies`, `peerDependenc
 1. Query package metadata with the selected manager.
 2. Prefer the upstream repository's releases or changelog.
 3. Read the releases strictly after the current version through the latest stable version.
-4. Record concise change summaries and direct `https://` links.
-5. If no changelog is available, record that fact and link to the package registry page.
+4. Check the latest version's Node engine, package-manager engine, and peer dependencies against `package.json` and the other direct dependencies.
+5. Search the project for affected imports, exports, configuration, and APIs.
+6. Find the project's own build and test commands, such as `package.json` scripts or a Makefile target, and use them in `steps` and `verify`.
 
-Check the latest version's Node engine, package-manager engine, and peer dependencies. Compare them with `package.json` and the other direct dependencies. Record a blocking warning when the new requirements conflict.
+Treat a major version change as potentially breaking. For a `0.x` package, treat a minor change as potentially breaking until release notes show otherwise.
 
-Treat a major version change as potentially breaking. For a `0.x` package, treat a minor change as potentially breaking until release notes show otherwise. Search the project for affected imports, exports, configuration, and APIs. Cite exact project paths and lines when code uses an affected feature.
+## Decide the action
 
-Do not infer why a package constraint exists. If a declared constraint excludes latest and no source explains it, set the status to `hold` and state `❓ unknown` for the reason.
+- `upgrade` when release notes and project usage show no required change.
+- `migrate` when the project must change code, configuration, or its Node version. Put each change in `steps` and cite the path and line in `locations`.
+- `decide` when a person must choose first: a constraint with no recorded reason, a licence change, a peer-dependency conflict with another direct dependency. Name the decision in `summary`.
+- `hold` only when the project records why the package must stay. Say what would lift it in `steps`.
+
+A caret or tilde range that excludes latest is a step ("change `^29.0.0` to `^30.0.1` in `package.json`"), not a hold. Set `target` below latest when the safe move stops short, such as the last release inside the current range.
 
 ## Write the fragment
 
-Write `<output_dir>/DEPS_UPGRADE_REPORT_NODE.json` with:
+Keep each entry within the schema's word limits. `changes` lists only releases that matter to this project.
 
-- `surface`: `node`
-- `label`: `Node`
-- `manager`: `npm` or `pnpm`
-- one entry per outdated direct dependency
-- an empty `entries` list when all direct dependencies are current
-- command or research failures in `errors`
+Sort the remaining facts into the top-level lists:
 
-Sort entries by status priority, then package name. Return the counts, errors, warnings, and absolute fragment path.
+- `batches`: packages that must move in one change, such as a test runner and its environment package. Order the batches as they should be applied.
+- `blockers`: facts that change whether an upgrade can proceed, such as an engine requirement the build image does not meet.
+- `notes`: how the research was done, including sources that failed and what was used instead.
+- `errors`: research that could not be completed.
+
+Write `<output_dir>/DEPS_UPGRADE_REPORT_NODE.json` with `surface` `node`, `label` `Node`, and `manager` `npm` or `pnpm`, one entry per outdated direct dependency, and an empty `entries` list when all direct dependencies are current. Sort entries by action priority (decide, migrate, hold, upgrade), then package name. Return the counts per action, the batch names, blockers, errors, and the absolute fragment path.

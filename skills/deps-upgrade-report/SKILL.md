@@ -1,11 +1,11 @@
 ---
 name: deps-upgrade-report
-description: Generate one self-contained HTML dependency upgrade report for uv/Python, npm or pnpm/Node, and pinned GitHub Actions. Use for outdated dependency checks, upgrade planning, changelog research, breaking-change assessment, or dependency audit reports. The workflow is read-only and does not update dependency files, lockfiles, or workflows.
+description: Generate one self-contained HTML dependency upgrade plan for uv/Python, npm or pnpm/Node, and pinned GitHub Actions, then collect per-package upgrade, skip, or defer decisions for an agent to execute. Use for outdated dependency checks, upgrade planning, changelog research, breaking-change assessment, or dependency audit reports. The workflow is read-only and does not update dependency files, lockfiles, or workflows.
 ---
 
 # Dependency upgrade report
 
-Produce one searchable HTML report from normalized JSON fragments. Detect the project's supported dependency types, research each detected type, assess its effect on the actual codebase, then render the fragments into one file.
+Produce one HTML upgrade plan from normalized JSON fragments, then let the user decide per package. Detect the project's supported dependency types, research each detected type, assess its effect on the actual codebase, render the fragments into one file, and collect decisions as a Markdown plan another agent can execute.
 
 ## Invariants
 
@@ -13,6 +13,7 @@ Produce one searchable HTML report from normalized JSON fragments. Detect the pr
 - Respect the declared Node package manager. If package-manager signals conflict, record `❓ unknown` and do not run a Node outdated command.
 - State unknown intent or provenance as `❓ unknown`. A version cap or inline SHA comment is evidence, not proof of why a version was chosen.
 - Write a fragment even when no upgrades are found. An empty current fragment prevents an older report being mistaken for current output.
+- Keep fragments within the schema's word limits. The report is read in one sitting; research detail belongs in `notes` and behind `changelog_url`.
 - Use absolute paths in worker prompts and commands.
 
 ## Step 1: choose paths
@@ -51,7 +52,7 @@ When delegation is available, start one worker per detected type without waiting
 - `DEPS_UPGRADE_REPORT_NODE.json`
 - `DEPS_UPGRADE_REPORT_ACTIONS.json`
 
-Workers must return counts, errors, warnings, and the absolute fragment path. A worker that cannot complete its research writes a valid fragment with an `errors` entry instead of pretending the dependency type is current.
+Workers must return counts per action, batch names, blockers, errors, and the absolute fragment path. A worker that cannot complete its research writes a valid fragment with an `errors` entry instead of pretending the dependency type is current.
 
 ## Step 4: render the HTML report
 
@@ -64,21 +65,39 @@ uv run --script <skill_dir>/scripts/render-report.py \
   <fragment paths...>
 ```
 
-The PEP 723 renderer installs its locked Jinja2 dependency through uv, validates the fragments, and produces one self-contained HTML file with an overview and one tab per detected type. It includes inline CSS and JavaScript, works from a `file://` URL, and makes every section visible when printed.
+The PEP 723 renderer installs its locked Jinja2 dependency through uv, validates the fragments, and produces one self-contained HTML file. If validation reports a field over its word limit, fix that field in the fragment and render again; do not relax the limit.
 
-## Step 5: verify and return
+The page lists blockers first, then batches in order, then the remaining packages per dependency type, with research notes collapsed at the end. Every package row has Upgrade, Skip, and Defer buttons and a note field. It works from a `file://` URL, keeps decisions in the browser, and can copy or download the plan as Markdown.
+
+## Step 5: collect decisions
+
+Offer the review server when the user wants to decide now or hand the upgrades to an agent:
+
+```bash
+uv run --script <skill_dir>/scripts/review-report.py \
+  --report <output_dir>/DEPS_UPGRADE_REPORT.html
+```
+
+It serves the report on `127.0.0.1`, opens a browser, saves every decision to `<output_dir>/DEPS_UPGRADE_PLAN.json` as it happens, and waits. Finish review in the page writes `<output_dir>/DEPS_UPGRADE_PLAN.md`, prints the same Markdown to stdout, and stops the server. Stopping it early keeps the decisions; running it again resumes them.
+
+When the shell has a time limit, run it in the background and read `DEPS_UPGRADE_PLAN.md` once it exists. When the user only wants the report, skip this step and tell them the page's Copy plan and Export plan buttons produce the same file.
+
+The plan is the hand-off for the upgrade work. Executing it is a separate task; this skill changes nothing in the project.
+
+## Step 6: verify and return
 
 - Confirm the HTML exists and is non-empty.
-- Open it in a browser and inspect every tab at desktop and narrow widths.
+- Open it in a browser and check the blockers, the first batch, and one expanded package at desktop and narrow widths.
 - Confirm external links use `https://` and no local project content is embedded beyond the report evidence.
 - Confirm `git status --short` for `project_root` is unchanged except for an explicitly approved output path.
 
-Return the absolute HTML path, counts per dependency type, breaking and hold counts, and any incomplete research. Do not present a partial report as complete.
+Return the absolute HTML path, counts per action for each dependency type, the batch names, blockers, any incomplete research, and the plan path when a review ran. Do not present a partial report as complete.
 
 ## Bundled resources
 
-- `references/report-schema.md` defines the worker fragment contract.
+- `references/report-schema.md` defines the worker fragment contract, including the word limits and the action semantics.
 - The three workflow references define type-specific gathering and research.
 - `scripts/detect-managers.py` detects supported tools and the Node package manager.
 - `scripts/list-direct-deps-python.py`, `scripts/list-direct-deps-node.py`, and `scripts/list-direct-actions.py` extract direct dependency declarations.
 - `scripts/render-report.py` validates fragments and renders the final HTML from `assets/report.html.j2`.
+- `scripts/review-report.py` serves the report locally, saves decisions, and writes the plan.

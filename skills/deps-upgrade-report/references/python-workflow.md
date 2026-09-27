@@ -22,31 +22,36 @@ Intersect the uv result with direct declarations. Keep the declaration group fro
 
 ## Check build-system requirements
 
-`uv tree` does not include build backends. For each direct `[build-system].requires` entry, query the package index and determine whether the declared constraint accepts the latest stable release.
-
-An excluded version is evidence of a constraint, not evidence of its purpose. Use `hold` and state `❓ unknown` unless project comments, history, issues, or affected configuration establish the reason.
+`uv tree` does not include build backends. For each direct `[build-system].requires` entry, query the package index and determine whether the declared constraint accepts the latest stable release. A requirement that already accepts latest needs no entry and no note.
 
 ## Research each outdated direct dependency
 
 1. Find the canonical upstream repository or changelog from project metadata or the package index.
 2. Read releases strictly after the current version through the latest stable version.
-3. Record concise change summaries and direct `https://` links.
-4. Check supported Python versions and relevant dependency requirements.
-5. Search the project for affected imports, functions, configuration keys, and APIs.
+3. Check supported Python versions and relevant dependency requirements.
+4. Search the project for affected imports, functions, configuration keys, and APIs.
+5. Find the project's own commands for locking, testing, and type checking, such as a Makefile or justfile target, and use them in `steps` and `verify`.
 
 Treat major version changes as potentially breaking. For `0.x` packages, treat minor changes as potentially breaking until release notes show otherwise. For CalVer packages, use the project's compatibility policy and explicit release-note markers instead of version arithmetic.
 
-For each breaking or held entry, cite exact project paths and lines when the code uses an affected feature. If the effect cannot be established, use `unknown` rather than inventing confidence.
+## Decide the action
+
+- `upgrade` when release notes and project usage show no required change.
+- `migrate` when the project must change code, configuration, or infrastructure. Put each change in `steps` and cite the path and line in `locations`.
+- `decide` when a person must choose first: a constraint with no recorded reason, a licence change, an unrecorded production version. Name the decision in `summary`.
+- `hold` only when the project records why the package must stay, such as a comment on the constraint or a linked issue. Say what would lift it in `steps`.
+
+A declared constraint that excludes latest is a step ("widen `<2` to `<3` in `pyproject.toml`"), not a hold. Set `target` below latest when the safe move stops short, such as the last release of the current major.
 
 ## Write the fragment
 
-Write `<output_dir>/DEPS_UPGRADE_REPORT_PYTHON.json` with:
+Keep each entry within the schema's word limits. `changes` lists only releases that matter to this project; link the rest through `changelog_url`.
 
-- `surface`: `python`
-- `label`: `Python`
-- `manager`: `uv`
-- one entry per outdated direct dependency or build-system requirement
-- an empty `entries` list when all direct dependencies are current
-- command or research failures in `errors`
+Sort the remaining facts into the top-level lists:
 
-Sort entries by status priority, then package name. Return the counts, errors, warnings, and absolute fragment path.
+- `batches`: packages that must move in one change, such as a framework and the plugins that pin its major. Order the batches as they should be applied.
+- `blockers`: facts that change whether an upgrade can proceed, such as a required database or Python version the project cannot confirm.
+- `notes`: how the research was done, including sources that failed and what was used instead.
+- `errors`: research that could not be completed.
+
+Write `<output_dir>/DEPS_UPGRADE_REPORT_PYTHON.json` with `surface` `python`, `label` `Python`, and `manager` `uv`, one entry per outdated direct dependency or build-system requirement, and an empty `entries` list when all direct dependencies are current. Sort entries by action priority (decide, migrate, hold, upgrade), then package name. Return the counts per action, the batch names, blockers, errors, and the absolute fragment path.

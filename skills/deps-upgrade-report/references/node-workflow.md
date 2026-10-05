@@ -50,6 +50,8 @@ Treat a major version change as potentially breaking. For a `0.x` package, treat
 - `decide` when a person must choose first: a constraint with no recorded reason, a licence change, a peer-dependency conflict with another direct dependency. Name the decision in `summary`.
 - `hold` only when the project records why the package must stay. Say what would lift it in `steps`.
 
+Every entry except `hold` starts its `steps` by raising the range floor in `package.json` to `target`, keeping its caret, tilde, or exact style, then runs the manager's install command. A lockfile-only update leaves the old floor declared.
+
 A caret or tilde range that excludes latest is a step ("change `^29.0.0` to `^30.0.1` in `package.json`"), not a hold. Set `target` below latest when the safe move stops short, such as the last release inside the current range.
 
 ## Write the fragment

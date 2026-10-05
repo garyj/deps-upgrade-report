@@ -46,7 +46,8 @@ The four lists after `entries` hold different kinds of facts. Put each fact in e
   ],
   "risk": "DRF 3.17.1 fails at import time on Django 6.1. No other affected API usage found.",
   "steps": [
-    "uv lock --upgrade-package django==6.1.1 --upgrade-package djangorestframework==3.18.0",
+    "Raise the floors in pyproject.toml: `django>=6.1.1`, `djangorestframework>=3.18.0`.",
+    "uv lock --upgrade-package django --upgrade-package djangorestframework",
     "Confirm the production PostgreSQL version is 15 or newer before deploying."
   ],
   "verify": [

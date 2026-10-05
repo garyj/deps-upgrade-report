@@ -41,6 +41,8 @@ Treat major version changes as potentially breaking. For `0.x` packages, treat m
 - `decide` when a person must choose first: a constraint with no recorded reason, a licence change, an unrecorded production version. Name the decision in `summary`.
 - `hold` only when the project records why the package must stay, such as a comment on the constraint or a linked issue. Say what would lift it in `steps`.
 
+Every entry except `hold` starts its `steps` by raising the floor in `pyproject.toml` to `target`, keeping extras, markers, and upper bounds, then runs `uv lock --upgrade-package <name>`. `uv lock --upgrade-package` alone moves only `uv.lock` and leaves the old floor declared.
+
 A declared constraint that excludes latest is a step ("widen `<2` to `<3` in `pyproject.toml`"), not a hold. Set `target` below latest when the safe move stops short, such as the last release of the current major.
 
 ## Write the fragment

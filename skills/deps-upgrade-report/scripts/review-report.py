@@ -33,6 +33,7 @@ INSTRUCTIONS = [
     "Run each item's verification before moving on. Stop and report at the first failure.",
     "Commands were proposed by the report, not executed. Check them against the project's own tooling first.",
     "Use the project's package manager for manifests and lockfiles; do not hand-edit lockfiles.",
+    "Raise each upgraded package's floor in its manifest (pyproject.toml, package.json) to the locked version, keeping extras, markers, upper bounds, and range style. A lockfile-only bump is incomplete.",
     'Leave skipped, deferred, and undecided packages untouched, and every package in an incomplete batch.',
 ]
 
